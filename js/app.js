@@ -272,7 +272,7 @@
       <div class="grid2">
         <button class="tile" data-go="#/deudas/cobrar"><small>Por cobrar</small><b class="pos">${clp(cob)}</b><span>${gc.length} ${gc.length === 1 ? 'cliente' : 'clientes'}</span></button>
         <button class="tile" data-go="#/deudas/pagar"><small>Por pagar</small><b class="neg">${clp(pag)}</b><span>${gp.length + (pagT > 0 ? 1 : 0)} ${gp.length + (pagT > 0 ? 1 : 0) === 1 ? 'pendiente' : 'pendientes'}</span></button>
-        <button class="tile" data-go="#/negocios/trabajos"><small>Trabajos en curso</small><b>${trabajos.length}</b><span>${clp(sum(trabajos, p => p.monto_cotizado))}</span></button>
+        <button class="tile" data-go="#/negocios/trabajos"><small>Proyectos en curso</small><b>${trabajos.length}</b><span>${clp(sum(trabajos, p => p.monto_cotizado))}</span></button>
         <button class="tile" data-go="#/negocios/cotizado"><small>Cotizaciones pendientes</small><b>${cotiz.length}</b><span>${clp(sum(cotiz, p => p.monto_cotizado))}</span></button>
       </div>
       ${ivaMes > 0 ? `<section class="iva-card"><div class="grow"><small>IVA de ventas de ${esc(MESES_L[new Date().getMonth()])}</small><b>${clp(ivaMes)}</b></div><span>${ventasIvaMes.length} ${ventasIvaMes.length === 1 ? 'venta' : 'ventas'} con IVA · por pagar al SII</span></section>` : ''}
@@ -290,13 +290,13 @@
   const FILTROS = {
     abiertos: ['En curso y cotizados', p => !['cerrado', 'perdido'].includes(p.estado)],
     cotizado: ['Cotizados', p => p.estado === 'cotizado'],
-    trabajos: ['Aceptados y activos', p => ['aceptado', 'activo'].includes(p.estado)],
+    trabajos: ['Proyectos aceptados y activos', p => ['aceptado', 'activo'].includes(p.estado)],
     terminado: ['Terminados', p => p.estado === 'terminado'],
     cerrado: ['Cerrados', p => p.estado === 'cerrado'],
     perdido: ['Perdidos', p => p.estado === 'perdido'],
     todos: ['Todos', () => true],
   };
-  const CHIP_LBL = { abiertos: 'Abiertos', cotizado: 'Cotizados', trabajos: 'En curso', terminado: 'Terminados', cerrado: 'Cerrados', perdido: 'Perdidos', todos: 'Todos' };
+  const CHIP_LBL = { abiertos: 'Abiertos', cotizado: 'Cotizados', trabajos: 'Proyectos', terminado: 'Terminados', cerrado: 'Cerrados', perdido: 'Perdidos', todos: 'Todos' };
 
   function vNegocios(f) {
     f = FILTROS[f] ? f : 'abiertos';
@@ -348,7 +348,8 @@
         <button class="list-item" data-go="#/trabajador/${tid}"><span class="ico worker">${I.worker}</span>
           <div class="grow"><p class="t">${esc(C.trab[tid]?.nombre || 'Trabajador')}</p><p class="s">${diasTxt(v.dias)}</p></div>
           <p class="amt">${clp(v.valor)}</p></button>`).join('')}</div>` : empty('Sin asistencia registrada')}
-      <button class="btn-ghost full" data-act="asistencia" data-proyecto="${p.id}">${I.cal} Registrar asistencia aquí</button>`;
+      ${esProyecto(p) ? `<button class="btn-ghost full" data-act="asistencia" data-proyecto="${p.id}">${I.cal} Registrar asistencia aquí</button>`
+        : `<p class="note">Para registrar asistencia, primero marca esta cotización como <b>Aceptada</b> o <b>Activa</b> (pasa a ser proyecto).</p>`}`;
     const pre = `data-proyecto="${p.id}" data-cliente="${p.cliente_id || ''}"`;
     return shell({ title: p.nombre, sub: nomCli(p.cliente_id), back: '#/negocios', right: `<button class="icon-btn" data-act="edit-negocio" data-id="${p.id}" aria-label="Editar">${I.edit}</button>`, body, bar: ventaGastoBar(pre) });
   }
@@ -491,7 +492,7 @@
     const hoyAs = D.asistencias.filter(a => a.fecha === hoyS);
     const totalDebe = sum(lista, t => Math.max(0, st[t.id].debe));
     // Proyectos abiertos: primero los con asistencia más reciente, luego las cotizaciones más nuevas
-    const proys = D.proyectos.filter(p => !['cerrado', 'perdido'].includes(p.estado)).map(p => {
+    const proys = D.proyectos.filter(esProyecto).map(p => {
       const as = D.asistencias.filter(a => a.proyecto_id === p.id);
       const ult = as.reduce((m, a) => a.fecha > m ? a.fecha : m, '');
       const nombres = [...new Set(as.map(a => (C.trab[a.trabajador_id]?.nombre || '').split(' ')[0]).filter(Boolean))];
@@ -517,7 +518,8 @@
           <div class="end"><p class="amt">${clp(x.mo)}</p><button class="btn-sm" data-act="asistencia" data-proyecto="${x.p.id}">${I.plus} Día</button></div>
         </div>`).join('')}</div>
         ${sinAsignar.length ? `<p class="note">${sinAsignar.length} ${sinAsignar.length === 1 ? 'día registrado' : 'días registrados'} sin proyecto. Puedes asignarlos tocando el día en la ficha del trabajador.</p>` : ''}`
-        : empty('No hay cotizaciones abiertas', 'Créalas en Negocios y aparecerán aquí para asignar asistencia.')}
+        : `<div class="empty"><p>Aún no hay proyectos</p><small>Una cotización pasa a proyecto cuando la marcas como <b>Aceptada</b> o <b>Activa</b>. Ahí aparece aquí para asignar asistencia.</small>
+            <button class="btn-ghost inline" data-go="#/negocios/cotizado">Ver cotizaciones</button></div>`}
       <h2 class="sec">Trabajadores</h2>
       ${lista.length ? `<div class="cards">${lista.map(t => `
         <button class="card person ${t.activo ? '' : 'inactive'}" data-go="#/trabajador/${t.id}">
@@ -781,11 +783,15 @@
     return v.proveedor_id || null;
   }
   // Lista cotizaciones y trabajos abiertos (cotizado, aceptado, activo, terminado), los más recientes primero.
-  function proyectoField(sel, label = 'Cotización o trabajo (opcional)') {
-    const abiertos = D.proyectos.filter(p => !['cerrado', 'perdido'].includes(p.estado) || p.id === sel)
-      .sort((a, b) => String(b.fecha_cotizacion || '').localeCompare(String(a.fecha_cotizacion || '')) || byText('nombre')(a, b));
+  // Proyecto = cotización aceptada (aceptado, activo o terminado). La asistencia solo se asigna a proyectos.
+  const ES_PROYECTO = ['aceptado', 'activo', 'terminado'];
+  const esProyecto = p => ES_PROYECTO.includes(p.estado);
+  function proyectoField(sel, label = 'Cotización o proyecto (opcional)', soloProyectos = false) {
+    const lista = D.proyectos.filter(p => (soloProyectos ? esProyecto(p) : !['cerrado', 'perdido'].includes(p.estado)) || p.id === sel)
+      .sort((a, b) => (esProyecto(b) - esProyecto(a)) || String(b.fecha_cotizacion || '').localeCompare(String(a.fecha_cotizacion || '')) || byText('nombre')(a, b));
     return { name: 'proyecto_id', label, type: 'select', value: sel || '',
-      options: [['', '— Ninguno —'], ...abiertos.map(p => [p.id, `${p.nombre} · ${nomCli(p.cliente_id)} (${(ESTADOS[p.estado] || '').toLowerCase()})`])] };
+      help: soloProyectos && !D.proyectos.some(esProyecto) ? 'Aún no hay proyectos. Una cotización pasa a proyecto al marcarla como Aceptada o Activa en Negocios.' : '',
+      options: [['', '— Ninguno —'], ...lista.map(p => [p.id, `${p.nombre} · ${nomCli(p.cliente_id)}${soloProyectos ? '' : ` (${(ESTADOS[p.estado] || '').toLowerCase()})`}`])] };
   }
 
   // ---------- ventas y gastos
@@ -1069,7 +1075,7 @@
         { name: 'trabajadores', label: '¿Quiénes trabajaron?', type: 'checks', required: true, value: pre.trabajador ? [pre.trabajador] : [],
           options: activos.map(t => [t.id, t.nombre, clp(t.valor_dia) + ' por día']) },
         pagoFields(v => (v.trabajadores || []).map(id => C.trab[id]).filter(Boolean)),
-        proyectoField(proySel, '¿En qué cotización o trabajo?'),
+        proyectoField(proySel, '¿En qué proyecto?', true),
         { name: 'nota', label: 'Nota (opcional)', type: 'text', placeholder: 'Ej: 2 horas extra' },
       ],
       validate: v => {
@@ -1097,7 +1103,7 @@
       fields: [
         { name: 'fecha', label: 'Día', type: 'date', value: a.fecha, required: true },
         pagoFields(() => [t], { jornada: normal ? String(normal) : 'otro', valor_otro: normal ? '' : base, extra: extra || '' }),
-        proyectoField(a.proyecto_id || '', '¿En qué cotización o trabajo?'),
+        proyectoField(a.proyecto_id || '', '¿En qué proyecto?', true),
         { name: 'nota', label: 'Nota (opcional)', type: 'text', value: a.nota || '' },
       ],
       onSubmit: v => {
