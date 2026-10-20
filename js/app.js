@@ -347,7 +347,8 @@
       ${Object.keys(moPorTrab).length ? `<div class="list">${Object.entries(moPorTrab).map(([tid, v]) => `
         <button class="list-item" data-go="#/trabajador/${tid}"><span class="ico worker">${I.worker}</span>
           <div class="grow"><p class="t">${esc(C.trab[tid]?.nombre || 'Trabajador')}</p><p class="s">${diasTxt(v.dias)}</p></div>
-          <p class="amt">${clp(v.valor)}</p></button>`).join('')}</div>` : empty('Sin asistencia registrada', 'Se registra desde Personal.')}`;
+          <p class="amt">${clp(v.valor)}</p></button>`).join('')}</div>` : empty('Sin asistencia registrada')}
+      <button class="btn-ghost full" data-act="asistencia" data-proyecto="${p.id}">${I.cal} Registrar asistencia aquí</button>`;
     const pre = `data-proyecto="${p.id}" data-cliente="${p.cliente_id || ''}"`;
     return shell({ title: p.nombre, sub: nomCli(p.cliente_id), back: '#/negocios', right: `<button class="icon-btn" data-act="edit-negocio" data-id="${p.id}" aria-label="Editar">${I.edit}</button>`, body, bar: ventaGastoBar(pre) });
   }
@@ -518,9 +519,10 @@
         <button class="btn-sm" data-act="asistencia" data-trabajador="${id}">${I.cal} Registrar día</button></section>
       <h2 class="sec">Días trabajados</h2>
       ${s.as.length ? `<div class="list">${s.as.map(a => `
-        <div class="list-item"><span class="ico when">${I.cal}</span>
-          <div class="grow"><p class="t">${fdate(a.fecha)} · ${jornadaTxt(a.jornada)}</p><p class="s">${a.proyecto_id ? esc(C.proy[a.proyecto_id]?.nombre || '') : 'Sin trabajo asignado'}${a.nota ? ' · ' + esc(a.nota) : ''}</p></div>
-          <p class="amt">${clp(a.valor)}</p><button class="icon-btn sm" data-act="del-asist" data-id="${a.id}" aria-label="Borrar día">${I.trash}</button></div>`).join('')}</div>` : empty('Sin días registrados')}
+        <div class="list-item tap" data-act="edit-asist" data-id="${a.id}"><span class="ico when">${I.cal}</span>
+          <div class="grow"><p class="t">${fdate(a.fecha)} · ${num(a.valor) - num(a.extra) !== Math.round(num(t.valor_dia) * num(a.jornada)) ? 'Valor especial' : jornadaTxt(a.jornada)}${num(a.extra) ? ` <span class="pos">+ extra ${clp(a.extra)}</span>` : ''}</p><p class="s">${a.proyecto_id ? esc(C.proy[a.proyecto_id]?.nombre || '') : 'Sin trabajo asignado'}${a.nota ? ' · ' + esc(a.nota) : ''}</p></div>
+          <p class="amt">${clp(a.valor)}</p><button class="icon-btn sm" data-act="del-asist" data-id="${a.id}" aria-label="Borrar día">${I.trash}</button></div>`).join('')}</div>
+        <p class="note">Toca un día para cambiar su valor o agregar horas extra.</p>` : empty('Sin días registrados')}
       <h2 class="sec">Pagos</h2>
       ${s.pg.length ? `<div class="list">${s.pg.map(p => `
         <div class="list-item"><span class="ico ok">${I.check}</span>
@@ -757,11 +759,12 @@
     if (v.proveedor_id === '__new') { const p = await DB.insert('proveedores', { nombre: v.nuevo_proveedor }); return p.id; }
     return v.proveedor_id || null;
   }
-  function proyectoField(sel, label = 'Trabajo (opcional)') {
+  // Lista cotizaciones y trabajos abiertos (cotizado, aceptado, activo, terminado), los más recientes primero.
+  function proyectoField(sel, label = 'Cotización o trabajo (opcional)') {
     const abiertos = D.proyectos.filter(p => !['cerrado', 'perdido'].includes(p.estado) || p.id === sel)
-      .sort((a, b) => (['aceptado', 'activo'].includes(b.estado) - ['aceptado', 'activo'].includes(a.estado)) || byText('nombre')(a, b));
+      .sort((a, b) => String(b.fecha_cotizacion || '').localeCompare(String(a.fecha_cotizacion || '')) || byText('nombre')(a, b));
     return { name: 'proyecto_id', label, type: 'select', value: sel || '',
-      options: [['', '— Ninguno —'], ...abiertos.map(p => [p.id, `${p.nombre} · ${nomCli(p.cliente_id)}`])] };
+      options: [['', '— Ninguno —'], ...abiertos.map(p => [p.id, `${p.nombre} · ${nomCli(p.cliente_id)} (${(ESTADOS[p.estado] || '').toLowerCase()})`])] };
   }
 
   // ---------- ventas y gastos
@@ -1013,33 +1016,78 @@
     if (r) { await reload(); if (nuevoId) location.hash = '#/trabajador/' + nuevoId; else render(); toast('Trabajador guardado', 'ok'); }
   }
 
+  // Valor del día: jornada normal (valor por día × jornada) o valor especial, más un extra opcional.
+  const pagoDia = (t, v) => {
+    const especial = v.jornada === 'otro';
+    const j = especial ? 1 : (num(v.jornada) || 1);
+    const base = especial ? num(v.valor_otro) : Math.round(num(t.valor_dia) * j);
+    const extra = num(v.extra);
+    return { j, base, extra, total: base + extra };
+  };
+  function pagoFields(getTrabs, pre = {}) {
+    return [
+      { name: 'jornada', label: 'Jornada', type: 'seg', options: [['1', 'Día completo'], ['0.5', 'Medio día'], ['otro', 'Valor especial']], value: pre.jornada || '1' },
+      { name: 'valor_otro', label: 'Valor del día', type: 'money', required: true, value: pre.valor_otro, showIf: v => v.jornada === 'otro' },
+      { name: 'extra', label: 'Extra: horas extra o bono (opcional)', type: 'money', value: pre.extra, help: 'Se suma al valor del día.' },
+      { name: 'pago_info', type: 'info', compute: v => getTrabs(v).map(t => {
+          const p = pagoDia(t, v);
+          return `${esc(t.nombre.split(' ')[0])}: ${clp(p.base)}${p.extra ? ' + extra ' + clp(p.extra) : ''} = <b>${clp(p.total)}</b>`;
+        }).join('<br>') },
+    ];
+  }
+
+  let ultimoProyAsist = '';
   async function asistencia(pre = {}) {
     const activos = D.trabajadores.filter(t => t.activo).sort(byText('nombre'));
     if (!activos.length) { toast('Primero agrega un trabajador'); return formTrabajador(); }
-    const trabajos = D.proyectos.filter(p => ['aceptado', 'activo'].includes(p.estado));
+    const proySel = pre.proyecto || (C.proy[ultimoProyAsist] ? ultimoProyAsist : '');
     const r = await openForm({
       title: 'Registrar asistencia',
       fields: [
         { name: 'fecha', label: 'Día', type: 'date', value: hoy(), required: true },
         { name: 'trabajadores', label: '¿Quiénes trabajaron?', type: 'checks', required: true, value: pre.trabajador ? [pre.trabajador] : [],
           options: activos.map(t => [t.id, t.nombre, clp(t.valor_dia) + ' por día']) },
-        { name: 'jornada', label: 'Jornada', type: 'seg', options: [['1', 'Día completo'], ['0.5', 'Medio día']], value: '1' },
-        { ...proyectoField(trabajos.length === 1 ? trabajos[0].id : '', '¿En qué trabajo?') },
-        { name: 'nota', label: 'Nota (opcional)', type: 'text' },
+        pagoFields(v => (v.trabajadores || []).map(id => C.trab[id]).filter(Boolean)),
+        proyectoField(proySel, '¿En qué cotización o trabajo?'),
+        { name: 'nota', label: 'Nota (opcional)', type: 'text', placeholder: 'Ej: 2 horas extra' },
       ],
       validate: v => {
         const ya = D.asistencias.filter(a => a.fecha === v.fecha && v.trabajadores.includes(a.trabajador_id));
         if (ya.length && !confirm(`${[...new Set(ya.map(a => C.trab[a.trabajador_id]?.nombre))].join(', ')} ya tiene asistencia ese día. ¿Registrar de todos modos?`)) return 'Registro cancelado.';
       },
       onSubmit: async v => {
-        const j = num(v.jornada) || 1;
         for (const id of v.trabajadores) {
-          const t = C.trab[id];
-          await DB.insert('asistencias', { trabajador_id: id, proyecto_id: v.proyecto_id || null, fecha: v.fecha, jornada: j, valor: Math.round(num(t.valor_dia) * j), nota: v.nota || null });
+          const p = pagoDia(C.trab[id], v);
+          await DB.insert('asistencias', { trabajador_id: id, proyecto_id: v.proyecto_id || null, fecha: v.fecha, jornada: p.j, valor: p.total, extra: p.extra, nota: v.nota || null });
         }
+        ultimoProyAsist = v.proyecto_id || '';
       },
     });
     if (r) { await refresh(); toast(r.trabajadores.length > 1 ? `${r.trabajadores.length} asistencias guardadas` : 'Asistencia guardada', 'ok'); }
+  }
+
+  async function editAsist(id) {
+    const a = D.asistencias.find(x => x.id === id); if (!a) return;
+    const t = C.trab[a.trabajador_id]; if (!t) return;
+    const extra = num(a.extra), base = num(a.valor) - extra;
+    const normal = [1, 0.5].find(j => num(a.jornada) === j && base === Math.round(num(t.valor_dia) * j));
+    const r = await openForm({
+      title: `Día de ${t.nombre.split(' ')[0]}`,
+      fields: [
+        { name: 'fecha', label: 'Día', type: 'date', value: a.fecha, required: true },
+        pagoFields(() => [t], { jornada: normal ? String(normal) : 'otro', valor_otro: normal ? '' : base, extra: extra || '' }),
+        proyectoField(a.proyecto_id || '', '¿En qué cotización o trabajo?'),
+        { name: 'nota', label: 'Nota (opcional)', type: 'text', value: a.nota || '' },
+      ],
+      onSubmit: v => {
+        const p = pagoDia(t, v);
+        return DB.update('asistencias', id, { fecha: v.fecha, jornada: p.j, valor: p.total, extra: p.extra, proyecto_id: v.proyecto_id || null, nota: v.nota || null });
+      },
+      extra: [{ label: 'Borrar día', cls: 'danger', onClick: async () => {
+        if (!confirm('¿Borrar este día trabajado?')) return false;
+        await DB.remove('asistencias', id); await refresh(); toast('Día borrado'); } }],
+    });
+    if (r) { await refresh(); toast('Día actualizado', 'ok'); }
   }
 
   async function pagarTrab(id) {
@@ -1073,8 +1121,9 @@
     row(['Fecha cotización', 'Cliente', 'Trabajo', 'Estado', 'Probabilidad', 'Monto cotizado', 'Próxima acción', 'Fecha seguimiento']);
     for (const p of D.proyectos) row([p.fecha_cotizacion, nomCli(p.cliente_id), p.nombre, ESTADOS[p.estado], PROB[p.probabilidad], num(p.monto_cotizado), p.proxima_accion || '', p.fecha_seguimiento || '']);
     row([]); row(['ASISTENCIA']);
-    row(['Fecha', 'Trabajador', 'Trabajo', 'Jornada', 'Valor']);
-    for (const a of [...D.asistencias].sort((a, b) => a.fecha.localeCompare(b.fecha))) row([a.fecha, C.trab[a.trabajador_id]?.nombre || '', C.proy[a.proyecto_id]?.nombre || '', num(a.jornada), num(a.valor)]);
+    row(['Fecha', 'Trabajador', 'Cotización / trabajo', 'Jornada', 'Valor día', 'Extra', 'Total', 'Nota']);
+    for (const a of [...D.asistencias].sort((a, b) => a.fecha.localeCompare(b.fecha)))
+      row([a.fecha, C.trab[a.trabajador_id]?.nombre || '', C.proy[a.proyecto_id]?.nombre || '', num(a.jornada), num(a.valor) - num(a.extra), num(a.extra), num(a.valor), a.nota || '']);
     row([]); row(['PAGOS A TRABAJADORES']);
     row(['Fecha', 'Trabajador', 'Monto', 'Nota']);
     for (const p of [...D.pagos_trabajador].sort((a, b) => a.fecha.localeCompare(b.fecha))) row([p.fecha, C.trab[p.trabajador_id]?.nombre || '', num(p.monto), p.nota || '']);
@@ -1118,7 +1167,8 @@
     'edit-prov': ds => formProveedor(C.prov[ds.id]),
     'nuevo-trab': () => formTrabajador(),
     'edit-trab': ds => formTrabajador(C.trab[ds.id]),
-    asistencia: ds => asistencia({ trabajador: ds.trabajador }),
+    asistencia: ds => asistencia({ trabajador: ds.trabajador, proyecto: ds.proyecto }),
+    'edit-asist': ds => editAsist(ds.id),
     'pagar-trab': ds => pagarTrab(ds.id),
     'del-asist': async ds => { if (!confirm('¿Borrar este día trabajado?')) return; await DB.remove('asistencias', ds.id); await refresh(); toast('Día borrado'); },
     'del-pago': async ds => { if (!confirm('¿Borrar este pago?')) return; await DB.remove('pagos_trabajador', ds.id); await refresh(); toast('Pago borrado'); },

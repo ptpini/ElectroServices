@@ -102,6 +102,9 @@ create table if not exists public.asistencias (
   created_at     timestamptz not null default now()
 );
 
+-- v1.2: extra (horas extra / bono) por día. valor = valor del día + extra
+alter table public.asistencias add column if not exists extra numeric(14,0) not null default 0;
+
 create table if not exists public.pagos_trabajador (
   id             uuid primary key default gen_random_uuid(),
   user_id        uuid not null default auth.uid() references auth.users(id) on delete cascade,

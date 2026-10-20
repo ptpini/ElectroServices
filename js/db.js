@@ -16,7 +16,7 @@ window.DB = (() => {
     }));
 
   // ------------------------------------------------------------ DEMO
-  const LS = 'electroservices_demo_v2';
+  const LS = 'electroservices_demo_v3';
   const dLoad = () => { try { return JSON.parse(localStorage.getItem(LS)); } catch { return null; } };
   const dSave = d => localStorage.setItem(LS, JSON.stringify(d));
 
