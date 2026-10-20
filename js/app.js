@@ -490,6 +490,15 @@
     const st = Object.fromEntries(lista.map(t => [t.id, trabStats(t.id)]));
     const hoyAs = D.asistencias.filter(a => a.fecha === hoyS);
     const totalDebe = sum(lista, t => Math.max(0, st[t.id].debe));
+    // Proyectos abiertos: primero los con asistencia más reciente, luego las cotizaciones más nuevas
+    const proys = D.proyectos.filter(p => !['cerrado', 'perdido'].includes(p.estado)).map(p => {
+      const as = D.asistencias.filter(a => a.proyecto_id === p.id);
+      const ult = as.reduce((m, a) => a.fecha > m ? a.fecha : m, '');
+      const nombres = [...new Set(as.map(a => (C.trab[a.trabajador_id]?.nombre || '').split(' ')[0]).filter(Boolean))];
+      const hoyN = [...new Set(as.filter(a => a.fecha === hoyS).map(a => (C.trab[a.trabajador_id]?.nombre || '').split(' ')[0]))];
+      return { p, dias: sum(as, a => a.jornada), mo: sum(as, a => a.valor), ult, nombres, hoyN };
+    }).sort((a, b) => b.ult.localeCompare(a.ult) || String(b.p.fecha_cotizacion || '').localeCompare(String(a.p.fecha_cotizacion || '')));
+    const sinAsignar = D.asistencias.filter(a => !a.proyecto_id || !C.proy[a.proyecto_id]);
     const body = `
       <section class="hero dark-hero">
         <p class="label">Les debes a tus trabajadores</p>
@@ -497,6 +506,18 @@
         <p class="hint">Hoy: ${hoyAs.length ? esc(hoyAs.map(a => (C.trab[a.trabajador_id]?.nombre || '').split(' ')[0]).join(', ')) : 'nadie registrado'}</p>
       </section>
       <button class="btn-big yellow full" data-act="asistencia">${I.cal}<span>Registrar asistencia</span></button>
+      <h2 class="sec">Proyectos</h2>
+      ${proys.length ? `<div class="cards">${proys.map(x => `
+        <div class="card proj" data-go="#/negocio/${x.p.id}">
+          <div class="grow">
+            <p class="t">${esc(x.p.nombre)}</p>
+            <p class="s">${esc(nomCli(x.p.cliente_id))} · ${badge(x.p.estado)}</p>
+            <p class="s">${x.dias ? `${diasTxt(x.dias)} · ${esc(x.nombres.join(', '))}` : 'Sin asistencia aún'}${x.hoyN.length ? ` · <span class="pos">hoy: ${esc(x.hoyN.join(', '))}</span>` : ''}</p>
+          </div>
+          <div class="end"><p class="amt">${clp(x.mo)}</p><button class="btn-sm" data-act="asistencia" data-proyecto="${x.p.id}">${I.plus} Día</button></div>
+        </div>`).join('')}</div>
+        ${sinAsignar.length ? `<p class="note">${sinAsignar.length} ${sinAsignar.length === 1 ? 'día registrado' : 'días registrados'} sin proyecto. Puedes asignarlos tocando el día en la ficha del trabajador.</p>` : ''}`
+        : empty('No hay cotizaciones abiertas', 'Créalas en Negocios y aparecerán aquí para asignar asistencia.')}
       <h2 class="sec">Trabajadores</h2>
       ${lista.length ? `<div class="cards">${lista.map(t => `
         <button class="card person ${t.activo ? '' : 'inactive'}" data-go="#/trabajador/${t.id}">
@@ -1185,7 +1206,9 @@
 
   document.addEventListener('click', async e => {
     if (document.body.classList.contains('sheet-open') && !e.target.closest('.sheet-wrap')) return;
-    const go = e.target.closest('[data-go]');
+    const go0 = e.target.closest('[data-go]'), act0 = e.target.closest('[data-act]');
+    // un botón de acción dentro de una tarjeta navegable tiene prioridad sobre la tarjeta
+    const go = act0 && go0 && go0.contains(act0) ? null : go0;
     if (go && !go.closest('.sheet-wrap')) { e.preventDefault(); const h = go.dataset.go; if (location.hash === h || (h === '#/' && !location.hash)) render(); else location.hash = h; return; }
     const a = e.target.closest('[data-act]');
     if (a && ACTIONS[a.dataset.act]) {
