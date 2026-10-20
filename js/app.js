@@ -28,6 +28,21 @@
   const jornadaTxt = j => num(j) === 1 ? 'Día completo' : num(j) === 0.5 ? 'Medio día' : `${num(j)} días`;
   const diasTxt = n => { n = Math.round(n * 10) / 10; return `${String(n).replace('.', ',')} ${n === 1 ? 'día' : 'días'}`; };
 
+  // ------------------------------------------------------------ IVA
+  const IVA_RATE = 0.19;
+  const calcIva = neto => { neto = num(neto); const iva = Math.round(neto * IVA_RATE); return { neto, iva, total: neto + iva }; };
+  const totalVenta = v => v.con_iva === 'si' ? calcIva(v.monto).total : num(v.monto);
+  const ivaInfo = v => {
+    if (!v.monto) return '';
+    if (v.con_iva !== 'si') return `Total a cobrar: <b>${clp(v.monto)}</b> · sin IVA`;
+    const c = calcIva(v.monto);
+    return `Neto ${clp(c.neto)} + IVA ${clp(c.iva)} = <b>Total ${clp(c.total)}</b>`;
+  };
+  const ivaFields = sel => [
+    { name: 'con_iva', label: 'IVA', type: 'seg', options: [['no', 'Sin IVA'], ['si', '+ IVA 19%']], value: sel || 'no' },
+    { name: 'iva_info', type: 'info', compute: ivaInfo },
+  ];
+
   // ------------------------------------------------------------ catálogos
   const ESTADOS = { cotizado: 'Cotizado', aceptado: 'Aceptado', activo: 'Activo', terminado: 'Terminado', cerrado: 'Cerrado', perdido: 'Perdido' };
   const ESTADO_ORDEN = ['cotizado', 'aceptado', 'activo', 'terminado', 'cerrado', 'perdido'];
@@ -233,6 +248,8 @@
     const mes = hoy().slice(0, 7);
     const mm = movimientos().filter(m => m.fecha.startsWith(mes));
     const ing = sum(mm.filter(m => m.monto > 0), m => m.monto), egr = -sum(mm.filter(m => m.monto < 0), m => m.monto);
+    const ventasIvaMes = D.transacciones.filter(t => t.tipo === 'venta' && t.con_iva && t.fecha.startsWith(mes));
+    const ivaMes = sum(ventasIvaMes, t => t.iva);
 
     const agenda = [];
     for (const p of D.proyectos) {
@@ -258,6 +275,7 @@
         <button class="tile" data-go="#/negocios/trabajos"><small>Trabajos en curso</small><b>${trabajos.length}</b><span>${clp(sum(trabajos, p => p.monto_cotizado))}</span></button>
         <button class="tile" data-go="#/negocios/cotizado"><small>Cotizaciones pendientes</small><b>${cotiz.length}</b><span>${clp(sum(cotiz, p => p.monto_cotizado))}</span></button>
       </div>
+      ${ivaMes > 0 ? `<section class="iva-card"><div class="grow"><small>IVA de ventas de ${esc(MESES_L[new Date().getMonth()])}</small><b>${clp(ivaMes)}</b></div><span>${ventasIvaMes.length} ${ventasIvaMes.length === 1 ? 'venta' : 'ventas'} con IVA · por pagar al SII</span></section>` : ''}
       <h2 class="sec">Próximas actividades</h2>
       ${agenda.length ? `<div class="list">${agenda.slice(0, 8).map(a => `
         <button class="list-item" data-go="${a.go}">
@@ -407,8 +425,9 @@
     const partyId = esV ? t.cliente_id : t.proveedor_id;
     const body = `
       <section class="card info">
-        <div class="row-between"><span class="badge ${esV ? 'venta' : 'gasto'}">${esV ? 'Venta' : 'Gasto'}</span><small class="muted">${fdate(t.fecha)}</small></div>
+        <div class="row-between"><span class="badge ${esV ? 'venta' : 'gasto'}">${esV ? (t.con_iva ? 'Venta con IVA' : 'Venta sin IVA') : 'Gasto'}</span><small class="muted">${fdate(t.fecha)}</small></div>
         <p class="big-amt">${clp(t.monto)}</p>
+        ${esV && t.con_iva ? `<p class="muted">Neto ${clp(t.neto ?? t.monto - num(t.iva))} + IVA ${clp(t.iva)}</p>` : ''}
         <div class="progress"><span style="width:${pct}%"></span></div>
         <div class="row-between"><span class="pos">${esV ? 'Cobrado' : 'Pagado'} ${clp(pg)}</span><span class="${s > 0 ? (esV ? 'pos' : 'neg') : 'ok'}">${s > 0 ? (esV ? 'Debe ' : 'Falta ') + clp(s) : 'Pagado completo'}</span></div>
       </section>
@@ -593,6 +612,7 @@
 
   // ------------------------------------------------------------ formularios
   function fieldHtml(f) {
+    if (f.type === 'info') return `<div class="field info-field" data-f="${f.name}"><div class="info-box"></div></div>`;
     const id = 'f_' + f.name;
     const val = f.value ?? '';
     let inner;
@@ -633,6 +653,7 @@
     const values = () => {
       const v = {};
       for (const f of fields) {
+        if (f.type === 'info') continue;
         const w = wrap(f.name);
         if (f.type === 'checks') v[f.name] = $$('input:checked', w).map(i => i.value);
         else if (f.type === 'seg') v[f.name] = $('input', w).value;
@@ -641,7 +662,13 @@
       }
       return v;
     };
-    const sync = () => { const v = values(); for (const f of fields) if (f.showIf) wrap(f.name).hidden = !f.showIf(v); };
+    const sync = () => {
+      const v = values();
+      for (const f of fields) {
+        if (f.showIf) wrap(f.name).hidden = !f.showIf(v);
+        if (f.type === 'info') { const html = f.compute(v); const box = $('.info-box', wrap(f.name)); box.innerHTML = html; wrap(f.name).hidden = !html; }
+      }
+    };
     form.addEventListener('input', e => {
       if (e.target.hasAttribute('data-money')) { const n = parseMoney(e.target.value); e.target.value = n ? clp(n) : ''; }
       sync();
@@ -675,6 +702,7 @@
         errEl.hidden = true;
         const v = values();
         for (const f of fields) {
+          if (f.type === 'info') continue;
           if (wrap(f.name).hidden) { delete v[f.name]; continue; }
           const val = v[f.name];
           const missing = f.type === 'money' ? !(val > 0) : f.type === 'checks' ? !val.length : !val;
@@ -745,7 +773,8 @@
       title: esV ? 'Nueva venta' : 'Nuevo gasto',
       submitLabel: esV ? 'Guardar venta' : 'Guardar gasto',
       fields: [
-        { name: 'monto', label: 'Monto total', type: 'money', required: true, big: true, value: pre.monto, autofocus: !pre.monto },
+        { name: 'monto', label: esV ? 'Monto' : 'Monto total', type: 'money', required: true, big: true, value: pre.monto, autofocus: !pre.monto },
+        esV ? ivaFields(pre.con_iva) : null,
         { name: 'descripcion', label: esV ? '¿Qué trabajo o venta fue?' : '¿En qué se gastó?', type: 'text', required: true, value: pre.descripcion || '', placeholder: esV ? 'Ej: Cambio de tablero' : 'Ej: Cables y enchufes' },
         esV ? clienteFields(cli) : proveedorFields(pre.proveedor_id),
         esV ? null : { name: 'categoria', label: 'Categoría', type: 'select', options: CATS.map(c => [c, c]), value: 'Materiales' },
@@ -758,18 +787,22 @@
         { name: 'fecha', label: 'Fecha', type: 'date', value: hoy(), required: true },
       ],
       validate: v => {
-        if (v.estado === 'parcial' && v.abono >= v.monto) return 'El abono debe ser menor que el total. Si pagó todo, elige "' + (esV ? 'Pagó todo' : 'Pagado') + '".';
+        const total = esV ? totalVenta(v) : v.monto;
+        if (v.estado === 'parcial' && v.abono >= total) return `El abono debe ser menor que el total (${clp(total)}). Si pagó todo, elige "` + (esV ? 'Pagó todo' : 'Pagado') + '".';
         if (esV && v.estado !== 'pagado' && !v.cliente_id && !(v.proyecto_id && C.proy[v.proyecto_id]?.cliente_id)) return 'Elige el cliente, así sabes quién te debe.';
       },
       onSubmit: async v => {
         let cliente_id = null, proveedor_id = null;
         if (esV) { cliente_id = await resolveCliente(v); if (!cliente_id && v.proyecto_id) cliente_id = C.proy[v.proyecto_id]?.cliente_id || null; }
         else proveedor_id = await resolveProveedor(v);
+        const iv = esV && v.con_iva === 'si' ? calcIva(v.monto) : null;
+        const total = iv ? iv.total : v.monto;
         const t = await DB.insert('transacciones', {
-          tipo, descripcion: v.descripcion, monto: v.monto, fecha: v.fecha || hoy(), vencimiento: v.vencimiento || null,
+          tipo, descripcion: v.descripcion, monto: total, fecha: v.fecha || hoy(), vencimiento: v.vencimiento || null,
           categoria: v.categoria || null, cliente_id, proveedor_id, proyecto_id: v.proyecto_id || null,
+          con_iva: !!iv, neto: iv ? iv.neto : null, iva: iv ? iv.iva : 0,
         });
-        const pago = v.estado === 'pagado' ? v.monto : v.estado === 'parcial' ? v.abono : 0;
+        const pago = v.estado === 'pagado' ? total : v.estado === 'parcial' ? v.abono : 0;
         if (pago > 0) await DB.insert('abonos', { transaccion_id: t.id, monto: pago, fecha: v.fecha || hoy(), medio: v.medio || null });
       },
     });
@@ -782,7 +815,8 @@
     const r = await openForm({
       title: esV ? 'Editar venta' : 'Editar gasto',
       fields: [
-        { name: 'monto', label: 'Monto total', type: 'money', required: true, big: true, value: t.monto },
+        { name: 'monto', label: esV ? 'Monto' : 'Monto total', type: 'money', required: true, big: true, value: esV && t.con_iva ? (t.neto ?? t.monto) : t.monto },
+        esV ? ivaFields(t.con_iva ? 'si' : 'no') : null,
         { name: 'descripcion', label: 'Descripción', type: 'text', required: true, value: t.descripcion },
         esV ? clienteFields(t.cliente_id) : proveedorFields(t.proveedor_id),
         esV ? null : { name: 'categoria', label: 'Categoría', type: 'select', options: CATS.map(c => [c, c]), value: t.categoria || 'Otros' },
@@ -790,10 +824,14 @@
         { name: 'fecha', label: 'Fecha', type: 'date', value: t.fecha, required: true },
         { name: 'vencimiento', label: 'Fecha límite de pago (opcional)', type: 'date', value: t.vencimiento || '' },
       ],
-      validate: v => { if (v.monto < pg) return `Ya hay ${clp(pg)} abonado. El total no puede ser menor; borra abonos primero.`; },
+      validate: v => { const total = esV ? totalVenta(v) : v.monto; if (total < pg) return `Ya hay ${clp(pg)} abonado. El total (${clp(total)}) no puede ser menor; borra abonos primero.`; },
       onSubmit: async v => {
         const patch = { monto: v.monto, descripcion: v.descripcion, fecha: v.fecha, vencimiento: v.vencimiento || null, proyecto_id: v.proyecto_id || null };
-        if (esV) patch.cliente_id = await resolveCliente(v); else { patch.proveedor_id = await resolveProveedor(v); patch.categoria = v.categoria; }
+        if (esV) {
+          const iv = v.con_iva === 'si' ? calcIva(v.monto) : null;
+          Object.assign(patch, { monto: iv ? iv.total : v.monto, con_iva: !!iv, neto: iv ? iv.neto : null, iva: iv ? iv.iva : 0 });
+          patch.cliente_id = await resolveCliente(v);
+        } else { patch.proveedor_id = await resolveProveedor(v); patch.categoria = v.categoria; }
         await DB.update('transacciones', id, patch);
       },
       extra: [{ label: 'Eliminar', cls: 'danger', onClick: async () => {
@@ -1024,9 +1062,10 @@
     const lines = [];
     const row = arr => lines.push(arr.map(csvCell).join(';'));
     row(['VENTAS Y GASTOS']);
-    row(['Fecha', 'Tipo', 'Descripción', 'Cliente / Proveedor', 'Trabajo', 'Categoría', 'Monto', 'Pagado', 'Saldo', 'Fecha límite']);
+    row(['Fecha', 'Tipo', 'Descripción', 'Cliente / Proveedor', 'Trabajo', 'Categoría', 'Con IVA', 'Neto', 'IVA', 'Total', 'Pagado', 'Saldo', 'Fecha límite']);
     for (const t of [...D.transacciones].sort((a, b) => a.fecha.localeCompare(b.fecha)))
-      row([t.fecha, t.tipo === 'venta' ? 'Venta' : 'Gasto', t.descripcion, contraparte(t), C.proy[t.proyecto_id]?.nombre || '', t.categoria || '', num(t.monto), pagado(t), saldo(t), t.vencimiento || '']);
+      row([t.fecha, t.tipo === 'venta' ? 'Venta' : 'Gasto', t.descripcion, contraparte(t), C.proy[t.proyecto_id]?.nombre || '', t.categoria || '',
+        t.con_iva ? 'Sí' : 'No', t.con_iva ? num(t.neto ?? t.monto - num(t.iva)) : num(t.monto), num(t.iva), num(t.monto), pagado(t), saldo(t), t.vencimiento || '']);
     row([]); row(['ABONOS Y PAGOS']);
     row(['Fecha', 'Tipo', 'Descripción', 'Cliente / Proveedor', 'Monto', 'Medio', 'Nota']);
     for (const a of [...D.abonos].sort((a, b) => a.fecha.localeCompare(b.fecha))) { const t = C.trx[a.transaccion_id]; if (t) row([a.fecha, t.tipo === 'venta' ? 'Cobro' : 'Pago', t.descripcion, contraparte(t), num(a.monto), a.medio || '', a.nota || '']); }

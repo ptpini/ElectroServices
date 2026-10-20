@@ -73,6 +73,11 @@ create table if not exists public.transacciones (
   created_at    timestamptz not null default now()
 );
 
+-- v1.1: IVA en ventas (monto = total a cobrar; neto + iva cuando con_iva)
+alter table public.transacciones add column if not exists con_iva boolean not null default false;
+alter table public.transacciones add column if not exists neto numeric(14,0);
+alter table public.transacciones add column if not exists iva numeric(14,0) not null default 0;
+
 create table if not exists public.abonos (
   id              uuid primary key default gen_random_uuid(),
   user_id         uuid not null default auth.uid() references auth.users(id) on delete cascade,

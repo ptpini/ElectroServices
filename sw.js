@@ -1,10 +1,10 @@
 // Service worker: guarda la app en el teléfono para que abra rápido.
 // Los datos siempre vienen de Supabase (necesita internet para guardar).
 // Para forzar una actualización en los teléfonos, cambia VERSION.
-const VERSION = 'es-1.0.0';
+const VERSION = 'es-1.1.0';
 const SHELL = [
   './', 'index.html', 'manifest.webmanifest',
-  'css/styles.css?v=1.0.0', 'js/config.js?v=1.0.0', 'js/vendor/supabase.js', 'js/db.js?v=1.0.0', 'js/app.js?v=1.0.0',
+  'css/styles.css?v=1.1.0', 'js/config.js?v=1.1.0', 'js/vendor/supabase.js', 'js/db.js?v=1.1.0', 'js/app.js?v=1.1.0',
   'icons/icon-192.png', 'icons/apple-touch-icon.png'
 ];
 

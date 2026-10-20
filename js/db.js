@@ -16,7 +16,7 @@ window.DB = (() => {
     }));
 
   // ------------------------------------------------------------ DEMO
-  const LS = 'electroservices_demo_v1';
+  const LS = 'electroservices_demo_v2';
   const dLoad = () => { try { return JSON.parse(localStorage.getItem(LS)); } catch { return null; } };
   const dSave = d => localStorage.setItem(LS, JSON.stringify(d));
 
@@ -52,7 +52,7 @@ window.DB = (() => {
     venta(portugal.id, 'Sala de máquinas', 250000, ymd(-9), p1.id);
     venta(portugal.id, 'Limpieza tablero antiguo', 390000, ymd(-9), p1.id);
     venta(portugal.id, 'Focos y enchufe', 270000, ymd(-16), p1.id);
-    venta(verrock.id, 'Revisión instalación', 107100, ymd(-9));
+    Object.assign(venta(verrock.id, 'Revisión instalación', 107100, ymd(-9)), { con_iva: true, neto: 90000, iva: 17100 });
     venta(madeleine.id, 'Reparación enchufes', 175000, ymd(-9));
     venta(strindberg.id, 'Instalación luminarias', 357000, ymd(-14));
     venta(verrock.id, 'Visita técnica', 60000, ymd(-12), null, 60000);
