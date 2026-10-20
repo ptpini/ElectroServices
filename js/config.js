@@ -8,5 +8,5 @@ window.APP_CONFIG = {
   SUPABASE_URL: 'https://ulaendxmfyfyyikwtpnj.supabase.co',
   SUPABASE_KEY: 'sb_publishable_bwL7R_yRC9m5R8vHtToDBg_loNutbMh',
   EMPRESA: 'ElectroServices',
-  VERSION: '1.2.2'
+  VERSION: '1.3.0'
 };

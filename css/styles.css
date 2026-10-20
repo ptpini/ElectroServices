@@ -107,6 +107,17 @@ svg { width: 22px; height: 22px; flex: none; }
 .list-item:last-child { border-bottom: 0; }
 .list-item.tap { cursor: pointer; }
 .card.proj { cursor: pointer; align-items: flex-start; }
+.pk-list { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
+.pk-item { display: flex; align-items: center; gap: 12px; width: 100%; padding: 11px 14px; border: 1.5px solid var(--line); border-radius: 13px; background: #fff; }
+.pk-item.on { border-color: var(--green); background: var(--green-bg); }
+.pk-radio { width: 22px; height: 22px; border-radius: 50%; border: 2px solid var(--line); flex: none; background: #fff; }
+.pk-item.on .pk-radio { border: 7px solid var(--green); }
+.pk-txt { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.pk-txt b { font-weight: 650; font-size: 15px; }
+.pk-txt small { color: var(--muted); font-size: 13px; }
+.pk-warn { color: var(--amber); font-weight: 600; }
+.pk-item .badge { flex: none; }
+.pk-note { font-size: 13px; color: var(--muted); margin: 6px 2px 0; }
 .card.proj .s .badge { font-size: 11px; padding: 2px 7px; vertical-align: 1px; }
 .card.proj .btn-sm { padding: 8px 12px; }
 .list-item.tap:active { background: #F7F8FA; }

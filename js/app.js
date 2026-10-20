@@ -160,7 +160,7 @@
 
   // ------------------------------------------------------------ piezas UI
   const TABS = [
-    ['inicio', '#/', 'Inicio', I.home], ['negocios', '#/negocios', 'Negocios', I.deal],
+    ['inicio', '#/', 'Inicio', I.home], ['negocios', '#/negocios', 'Trabajos', I.deal],
     ['deudas', '#/deudas', 'Deudas', I.debt], ['clientes', '#/clientes', 'Clientes', I.people],
     ['personal', '#/personal', 'Personal', I.worker],
   ];
@@ -304,9 +304,9 @@
       ESTADO_ORDEN.indexOf(a.estado) - ESTADO_ORDEN.indexOf(b.estado) || String(a.fecha_seguimiento || '9999').localeCompare(String(b.fecha_seguimiento || '9999')) || String(b.created_at).localeCompare(String(a.created_at)));
     const body = `
       <div class="chips">${Object.keys(FILTROS).map(k => `<button class="chip ${k === f ? 'on' : ''}" data-go="#/negocios/${k}">${CHIP_LBL[k]}</button>`).join('')}</div>
-      <div class="summary"><b>${clp(sum(list, p => p.monto_cotizado))}</b><span>${list.length} ${list.length === 1 ? 'negocio' : 'negocios'} · ${esc(FILTROS[f][0].toLowerCase())}</span></div>
-      ${list.length ? `<div class="cards">${list.map(proyCard).join('')}</div>` : empty('No hay negocios aquí', 'Registra una cotización con el botón de abajo.')}`;
-    return shell({ title: 'Negocios', sub: 'Cotizaciones y trabajos', body, nav: 'negocios', bar: `<button class="btn-big dark" data-act="nuevo-negocio">${I.plus}<span>Nueva cotización</span></button>` });
+      <div class="summary"><b>${clp(sum(list, p => p.monto_cotizado))}</b><span>${list.length} ${list.length === 1 ? 'trabajo' : 'trabajos'} · ${esc(FILTROS[f][0].toLowerCase())}</span></div>
+      ${list.length ? `<div class="cards">${list.map(proyCard).join('')}</div>` : empty('No hay trabajos aquí', 'Registra una cotización con el botón de abajo.')}`;
+    return shell({ title: 'Trabajos', sub: 'Cotizaciones y proyectos', body, nav: 'negocios', bar: `<button class="btn-big dark" data-act="nuevo-negocio">${I.plus}<span>Nueva cotización</span></button>` });
   }
 
   function vNegocio(id) {
@@ -349,7 +349,7 @@
           <div class="grow"><p class="t">${esc(C.trab[tid]?.nombre || 'Trabajador')}</p><p class="s">${diasTxt(v.dias)}</p></div>
           <p class="amt">${clp(v.valor)}</p></button>`).join('')}</div>` : empty('Sin asistencia registrada')}
       ${esProyecto(p) ? `<button class="btn-ghost full" data-act="asistencia" data-proyecto="${p.id}">${I.cal} Registrar asistencia aquí</button>`
-        : `<p class="note">Para registrar asistencia, primero marca esta cotización como <b>Aceptada</b> o <b>Activa</b> (pasa a ser proyecto).</p>`}`;
+        : `<button class="btn-ghost full" data-act="asistencia" data-proyecto="${p.id}">${I.cal} Registrar asistencia (pasa a Activo)</button>`}`;
     const pre = `data-proyecto="${p.id}" data-cliente="${p.cliente_id || ''}"`;
     return shell({ title: p.nombre, sub: nomCli(p.cliente_id), back: '#/negocios', right: `<button class="icon-btn" data-act="edit-negocio" data-id="${p.id}" aria-label="Editar">${I.edit}</button>`, body, bar: ventaGastoBar(pre) });
   }
@@ -518,7 +518,7 @@
           <div class="end"><p class="amt">${clp(x.mo)}</p><button class="btn-sm" data-act="asistencia" data-proyecto="${x.p.id}">${I.plus} Día</button></div>
         </div>`).join('')}</div>
         ${sinAsignar.length ? `<p class="note">${sinAsignar.length} ${sinAsignar.length === 1 ? 'día registrado' : 'días registrados'} sin proyecto. Puedes asignarlos tocando el día en la ficha del trabajador.</p>` : ''}`
-        : `<div class="empty"><p>Aún no hay proyectos</p><small>Una cotización pasa a proyecto cuando la marcas como <b>Aceptada</b> o <b>Activa</b>. Ahí aparece aquí para asignar asistencia.</small>
+        : `<div class="empty"><p>Aún no hay proyectos</p><small>Una cotización pasa a proyecto cuando la marcas como <b>Aceptada</b> o <b>Activa</b> en Trabajos, o cuando le registras asistencia buscándola en el formulario.</small>
             <button class="btn-ghost inline" data-go="#/negocios/cotizado">Ver cotizaciones</button></div>`}
       <h2 class="sec">Trabajadores</h2>
       ${lista.length ? `<div class="cards">${lista.map(t => `
@@ -652,6 +652,10 @@
         inner = `<select id="${id}">${f.options.map(([v, l]) => `<option value="${esc(v)}" ${String(v) === String(val) ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select>`; break;
       case 'seg':
         inner = `<div class="seg"><input type="hidden" value="${esc(val)}">${f.options.map(([v, l]) => `<button type="button" data-seg="${esc(v)}" class="${String(v) === String(val) ? 'on' : ''}">${esc(l)}</button>`).join('')}</div>`; break;
+      case 'picker':
+        inner = `<div class="picker"><input type="hidden" class="pk-val" value="${esc(val)}">
+          <input id="${id}" type="search" class="pk-q" placeholder="${esc(f.placeholder || 'Buscar…')}" autocomplete="off" enterkeyhint="search">
+          <div class="pk-list"></div><p class="pk-note" hidden></p></div>`; break;
       case 'checks':
         inner = `<div class="checks">${f.options.length ? f.options.map(([v, l, s]) => `<label class="check"><input type="checkbox" value="${esc(v)}" ${(val || []).includes(v) ? 'checked' : ''}><span class="box">${I.check}</span><span class="lbl"><b>${esc(l)}</b>${s ? `<small>${esc(s)}</small>` : ''}</span></label>`).join('') : `<p class="muted">${esc(f.empty || 'No hay opciones')}</p>`}</div>`; break;
       default:
@@ -683,6 +687,7 @@
         if (f.type === 'checks') v[f.name] = $$('input:checked', w).map(i => i.value);
         else if (f.type === 'seg') v[f.name] = $('input', w).value;
         else if (f.type === 'money') v[f.name] = parseMoney($('input', w).value);
+        else if (f.type === 'picker') v[f.name] = $('.pk-val', w).value;
         else v[f.name] = ($('input,select,textarea', w).value || '').trim();
       }
       return v;
@@ -694,12 +699,31 @@
         if (f.type === 'info') { const html = f.compute(v); const box = $('.info-box', wrap(f.name)); box.innerHTML = html; wrap(f.name).hidden = !html; }
       }
     };
+    // Buscador: lista de opciones filtrada por texto; la elegida queda en .pk-val
+    const renderPicker = f => {
+      const w = wrap(f.name), sel = $('.pk-val', w).value, q = $('.pk-q', w).value;
+      const { items, note } = f.items(q, sel);
+      $('.pk-list', w).innerHTML = items.map(it => `
+        <button type="button" class="pk-item ${it.id === sel ? 'on' : ''}" data-pk="${esc(it.id)}">
+          <span class="pk-radio"></span><span class="pk-txt"><b>${esc(it.title)}</b>${it.sub ? `<small>${it.sub}</small>` : ''}</span>${it.badge || ''}</button>`).join('');
+      const n = $('.pk-note', w); n.textContent = note || ''; n.hidden = !note;
+    };
+    const pickers = fields.filter(f => f.type === 'picker');
+    pickers.forEach(renderPicker);
+    form.addEventListener('keydown', e => { if (e.key === 'Enter' && e.target.classList.contains('pk-q')) { e.preventDefault(); e.target.blur(); } });
     form.addEventListener('input', e => {
       if (e.target.hasAttribute('data-money')) { const n = parseMoney(e.target.value); e.target.value = n ? clp(n) : ''; }
+      if (e.target.classList.contains('pk-q')) { const f = pickers.find(x => wrap(x.name).contains(e.target)); if (f) renderPicker(f); }
       sync();
     });
     form.addEventListener('change', sync);
     form.addEventListener('click', e => {
+      const pk = e.target.closest('[data-pk]');
+      if (pk) {
+        const f = pickers.find(x => wrap(x.name).contains(pk));
+        if (f) { $('.pk-val', wrap(f.name)).value = pk.dataset.pk; renderPicker(f); sync(); }
+        return;
+      }
       const s = e.target.closest('[data-seg]'); if (!s) return;
       const w = s.closest('.seg');
       $$('[data-seg]', w).forEach(b => b.classList.toggle('on', b === s));
@@ -786,11 +810,50 @@
   // Proyecto = cotización aceptada (aceptado, activo o terminado). La asistencia solo se asigna a proyectos.
   const ES_PROYECTO = ['aceptado', 'activo', 'terminado'];
   const esProyecto = p => ES_PROYECTO.includes(p.estado);
+  // Buscador de trabajos para la asistencia: sin texto muestra los proyectos (los con asistencia más reciente arriba);
+  // escribiendo busca en todos los trabajos, también cotizaciones (que pasan a Activo al guardar).
+  const normTxt = s => String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+  const ultimaAsist = id => D.asistencias.reduce((m, a) => a.proyecto_id === id && a.fecha > m ? a.fecha : m, '');
+  function proyectoPicker(sel, label = '¿En qué trabajo?') {
+    return {
+      name: 'proyecto_id', label, type: 'picker', value: sel || '', placeholder: 'Buscar trabajo o cliente…',
+      items: (q, cur) => {
+        const qn = normTxt(q).trim();
+        let list = qn
+          ? D.proyectos.filter(p => p.estado !== 'perdido' && normTxt(p.nombre + ' ' + nomCli(p.cliente_id)).includes(qn))
+            .sort((a, b) => (esProyecto(b) - esProyecto(a)) || String(b.fecha_cotizacion || '').localeCompare(String(a.fecha_cotizacion || '')))
+          : D.proyectos.filter(esProyecto)
+            .sort((a, b) => ultimaAsist(b.id).localeCompare(ultimaAsist(a.id)) || String(b.fecha_cotizacion || '').localeCompare(String(a.fecha_cotizacion || '')));
+        const total = list.length;
+        list = list.slice(0, 8);
+        if (cur && C.proy[cur] && !list.some(p => p.id === cur)) list.unshift(C.proy[cur]);
+        const items = list.map(p => ({
+          id: p.id, title: p.nombre,
+          sub: esc(nomCli(p.cliente_id)) + (p.estado === 'cotizado' ? ' · <span class="pk-warn">pasará a Activo</span>' : ''),
+          badge: p.estado === 'cotizado' ? '<span class="badge st-cotizado">Cotización</span>' : badge(p.estado),
+        }));
+        if (!qn) items.unshift({ id: '', title: 'Sin trabajo', sub: 'No asignar a ningún trabajo' });
+        let note = '';
+        if (qn && !total) note = 'No hay trabajos con ese nombre o cliente.';
+        else if (total > 8) note = `Mostrando 8 de ${total}. Escribe más para afinar la búsqueda.`;
+        else if (!qn && !D.proyectos.some(esProyecto)) note = 'Aún no hay proyectos activos. Escribe para buscar entre tus cotizaciones.';
+        else if (!qn) note = 'Escribe para buscar también entre las cotizaciones.';
+        return { items, note };
+      },
+    };
+  }
+  // Si se asigna asistencia a una cotización, el trabajo ya partió: pasa a Activo.
+  async function activarSiCotizado(id) {
+    const p = C.proy[id];
+    if (p && p.estado === 'cotizado') { await DB.update('proyectos', id, { estado: 'activo' }); return p.nombre; }
+    return null;
+  }
+
   function proyectoField(sel, label = 'Cotización o proyecto (opcional)', soloProyectos = false) {
     const lista = D.proyectos.filter(p => (soloProyectos ? esProyecto(p) : !['cerrado', 'perdido'].includes(p.estado)) || p.id === sel)
       .sort((a, b) => (esProyecto(b) - esProyecto(a)) || String(b.fecha_cotizacion || '').localeCompare(String(a.fecha_cotizacion || '')) || byText('nombre')(a, b));
     return { name: 'proyecto_id', label, type: 'select', value: sel || '',
-      help: soloProyectos && !D.proyectos.some(esProyecto) ? 'Aún no hay proyectos. Una cotización pasa a proyecto al marcarla como Aceptada o Activa en Negocios.' : '',
+      help: soloProyectos && !D.proyectos.some(esProyecto) ? 'Aún no hay proyectos. Una cotización pasa a proyecto al marcarla como Aceptada o Activa en Trabajos.' : '',
       options: [['', '— Ninguno —'], ...lista.map(p => [p.id, `${p.nombre} · ${nomCli(p.cliente_id)}${soloProyectos ? '' : ` (${(ESTADOS[p.estado] || '').toLowerCase()})`}`])] };
   }
 
@@ -917,7 +980,7 @@
   async function formNegocio(p = null, pre = {}) {
     const edit = !!p; p = p || {};
     const r = await openForm({
-      title: edit ? 'Editar negocio' : 'Nueva cotización',
+      title: edit ? 'Editar trabajo' : 'Nueva cotización',
       fields: [
         clienteFields(p.cliente_id || pre.cliente_id),
         { name: 'nombre', label: 'Trabajo', type: 'text', required: true, value: p.nombre || '', placeholder: 'Ej: Instalación eléctrica casa', autofocus: !edit },
@@ -1068,6 +1131,7 @@
     const activos = D.trabajadores.filter(t => t.activo).sort(byText('nombre'));
     if (!activos.length) { toast('Primero agrega un trabajador'); return formTrabajador(); }
     const proySel = pre.proyecto || (C.proy[ultimoProyAsist] ? ultimoProyAsist : '');
+    let activado = null;
     const r = await openForm({
       title: 'Registrar asistencia',
       fields: [
@@ -1075,7 +1139,7 @@
         { name: 'trabajadores', label: '¿Quiénes trabajaron?', type: 'checks', required: true, value: pre.trabajador ? [pre.trabajador] : [],
           options: activos.map(t => [t.id, t.nombre, clp(t.valor_dia) + ' por día']) },
         pagoFields(v => (v.trabajadores || []).map(id => C.trab[id]).filter(Boolean)),
-        proyectoField(proySel, '¿En qué proyecto?', true),
+        proyectoPicker(proySel),
         { name: 'nota', label: 'Nota (opcional)', type: 'text', placeholder: 'Ej: 2 horas extra' },
       ],
       validate: v => {
@@ -1088,9 +1152,14 @@
           await DB.insert('asistencias', { trabajador_id: id, proyecto_id: v.proyecto_id || null, fecha: v.fecha, jornada: p.j, valor: p.total, extra: p.extra, nota: v.nota || null });
         }
         ultimoProyAsist = v.proyecto_id || '';
+        activado = v.proyecto_id ? await activarSiCotizado(v.proyecto_id) : null;
       },
     });
-    if (r) { await refresh(); toast(r.trabajadores.length > 1 ? `${r.trabajadores.length} asistencias guardadas` : 'Asistencia guardada', 'ok'); }
+    if (r) {
+      await refresh();
+      const msg = r.trabajadores.length > 1 ? `${r.trabajadores.length} asistencias guardadas` : 'Asistencia guardada';
+      toast(activado ? `${msg} · "${activado}" pasó a Activo` : msg, 'ok');
+    }
   }
 
   async function editAsist(id) {
@@ -1103,12 +1172,13 @@
       fields: [
         { name: 'fecha', label: 'Día', type: 'date', value: a.fecha, required: true },
         pagoFields(() => [t], { jornada: normal ? String(normal) : 'otro', valor_otro: normal ? '' : base, extra: extra || '' }),
-        proyectoField(a.proyecto_id || '', '¿En qué proyecto?', true),
+        proyectoPicker(a.proyecto_id || ''),
         { name: 'nota', label: 'Nota (opcional)', type: 'text', value: a.nota || '' },
       ],
-      onSubmit: v => {
+      onSubmit: async v => {
         const p = pagoDia(t, v);
-        return DB.update('asistencias', id, { fecha: v.fecha, jornada: p.j, valor: p.total, extra: p.extra, proyecto_id: v.proyecto_id || null, nota: v.nota || null });
+        await DB.update('asistencias', id, { fecha: v.fecha, jornada: p.j, valor: p.total, extra: p.extra, proyecto_id: v.proyecto_id || null, nota: v.nota || null });
+        if (v.proyecto_id) await activarSiCotizado(v.proyecto_id);
       },
       extra: [{ label: 'Borrar día', cls: 'danger', onClick: async () => {
         if (!confirm('¿Borrar este día trabajado?')) return false;
