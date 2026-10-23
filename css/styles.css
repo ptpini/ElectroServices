@@ -108,6 +108,12 @@ svg { width: 22px; height: 22px; flex: none; }
 .list-item.tap { cursor: pointer; }
 .card.proj { cursor: pointer; align-items: flex-start; }
 .card.propuesta { flex-wrap: wrap; }
+.card.propuesta.empty-prop { flex-direction: column; align-items: stretch; gap: 10px; }
+.card.propuesta .btn-sm svg { width: 17px; height: 17px; }
+.prop-more { display: flex; gap: 18px; flex-wrap: wrap; width: 100%; padding-top: 4px; }
+.link-sm { color: var(--blue); font-weight: 650; font-size: 14px; padding: 6px 0; }
+.link-sm.danger { color: var(--red); }
+.link-sm.inline { padding: 0; font-size: inherit; }
 .card.propuesta .prop-actions { display: flex; gap: 8px; flex-wrap: wrap; width: 100%; }
 .card.propuesta .prop-actions .btn-sm { flex: 1; justify-content: center; text-align: center; }
 .ico.doc { background: var(--blue-bg); color: var(--blue); }

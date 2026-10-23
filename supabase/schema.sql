@@ -46,6 +46,8 @@ create table if not exists public.proyectos (
 
 -- v1.4: link al documento de propuesta de cada cotización
 alter table public.proyectos add column if not exists propuesta_url text;
+-- v1.5: ruta del PDF subido a Storage (si la propuesta es un PDF subido desde la app)
+alter table public.proyectos add column if not exists propuesta_path text;
 
 -- ---------- TRABAJADORES ----------
 create table if not exists public.trabajadores (
@@ -148,3 +150,21 @@ begin
     execute format('grant select, insert, update, delete on public.%I to authenticated', t);
   end loop;
 end $$;
+
+-- ---------- STORAGE: PDFs de propuestas (v1.5) ----------
+-- Bucket público con nombres aleatorios: el cliente abre el PDF con el link (igual que un Google Doc compartido).
+-- Nadie puede listar los archivos; solo el dueño sube o borra dentro de su carpeta (<user_id>/...).
+insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+values ('propuestas', 'propuestas', true, 20971520, array['application/pdf'])
+on conflict (id) do update set public = excluded.public,
+  file_size_limit = excluded.file_size_limit, allowed_mime_types = excluded.allowed_mime_types;
+
+drop policy if exists "propuestas_subir_propias" on storage.objects;
+drop policy if exists "propuestas_ver_propias" on storage.objects;
+drop policy if exists "propuestas_borrar_propias" on storage.objects;
+create policy "propuestas_subir_propias" on storage.objects for insert to authenticated
+  with check (bucket_id = 'propuestas' and (storage.foldername(name))[1] = auth.uid()::text);
+create policy "propuestas_ver_propias" on storage.objects for select to authenticated
+  using (bucket_id = 'propuestas' and (storage.foldername(name))[1] = auth.uid()::text);
+create policy "propuestas_borrar_propias" on storage.objects for delete to authenticated
+  using (bucket_id = 'propuestas' and (storage.foldername(name))[1] = auth.uid()::text);

@@ -176,5 +176,23 @@ window.DB = (() => {
 
   function resetDemo() { localStorage.removeItem(LS); }
 
-  return { demo, init, session, onAuth, signIn, signOut, loadAll, insert, update, remove, setAjuste, resetDemo };
+  // ------------------------------------------------------------ PDFs de propuestas
+  // Bucket público "propuestas": cada archivo con nombre aleatorio dentro de la carpeta del usuario.
+  // Solo el dueño puede subir o borrar; el cliente lo abre con el link (como un Google Doc compartido).
+  const BUCKET = 'propuestas';
+  async function uploadPropuesta(proyectoId, file) {
+    if (demo) return { path: 'demo/' + uuid() + '.pdf', url: URL.createObjectURL(file) };
+    const path = `${userId}/${proyectoId}/${uuid()}.pdf`;
+    const { error } = await sb.storage.from(BUCKET).upload(path, file, { contentType: 'application/pdf', upsert: false });
+    if (error) throw error;
+    const { data } = sb.storage.from(BUCKET).getPublicUrl(path);
+    return { path, url: data.publicUrl };
+  }
+  async function removeArchivo(path) {
+    if (demo || !path) return;
+    const { error } = await sb.storage.from(BUCKET).remove([path]);
+    if (error) console.warn('No se pudo borrar el PDF anterior', error);
+  }
+
+  return { demo, init, session, onAuth, signIn, signOut, loadAll, insert, update, remove, setAjuste, resetDemo, uploadPropuesta, removeArchivo };
 })();

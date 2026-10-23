@@ -48,12 +48,15 @@
   const limpiarUrl = s => {
     let u = String(s || '').trim();
     if (!u) return null;
+    if (DB.demo && u.startsWith('blob:')) return u; // PDFs de prueba en modo demo
     if (!/^https?:\/\//i.test(u)) u = 'https://' + u;
     try { const x = new URL(u); return /^https?:$/.test(x.protocol) && x.hostname.includes('.') ? x.href : null; } catch { return null; }
   };
   const hostDe = s => { try { return new URL(limpiarUrl(s)).hostname.replace(/^www\./, ''); } catch { return ''; } };
   // Google Docs: al cliente se le envía el PDF que Google genera desde el documento (export?format=pdf).
   const gdocId = s => (String(limpiarUrl(s) || '').match(/^https:\/\/docs\.google\.com\/document\/(?:u\/\d+\/)?d\/([\w-]{20,})/) || [])[1] || null;
+  // "Hacer una copia" de la plantilla en Google Docs
+  const copiaPlantilla = () => C.plantilla ? `https://docs.google.com/document/d/${C.plantilla}/copy` : null;
   const urlParaCliente = s => { const id = gdocId(s); return id ? `https://docs.google.com/document/d/${id}/export?format=pdf` : limpiarUrl(s); };
   const waPropuesta = p => {
     const cli = C.cli[p.cliente_id];
@@ -97,6 +100,7 @@
     cal: svg('<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/>'),
     check: svg('<path d="m5 12 5 5 9-10"/>'),
     doc: svg('<path d="M14 3H6v18h12V7z"/><path d="M14 3v4h4"/><path d="M9 12h6M9 16h6"/>'),
+    upload: svg('<path d="M12 16V4"/><path d="m7 9 5-5 5 5"/><path d="M5 20h14"/>'),
     left: svg('<path d="m15 6-6 6 6 6"/>'),
     right: svg('<path d="m9 6 6 6-6 6"/>'),
     alert: svg('<path d="M12 3 2 20h20z"/><path d="M12 10v4M12 17v.01"/>'),
@@ -115,6 +119,7 @@
       cli: by(D.clientes), prov: by(D.proveedores), proy: by(D.proyectos),
       trab: by(D.trabajadores), trx: by(D.transacciones), pagado: {},
       saldoIni: num((D.ajustes.find(a => a.clave === 'saldo_inicial') || {}).valor),
+      plantilla: gdocId((D.ajustes.find(a => a.clave === 'plantilla_propuesta') || {}).valor),
     };
     for (const a of D.abonos) C.pagado[a.transaccion_id] = (C.pagado[a.transaccion_id] || 0) + num(a.monto);
   }
@@ -350,15 +355,26 @@
       <h2 class="sec">Propuesta</h2>
       ${limpiarUrl(p.propuesta_url) ? `<section class="card propuesta">
           <span class="ico doc">${I.doc}</span>
-          <div class="grow"><p class="t">Documento de propuesta</p><p class="s link-host">${gdocId(p.propuesta_url) ? 'Google Docs · al cliente le llega en PDF' : esc(hostDe(p.propuesta_url))}</p></div>
+          <div class="grow"><p class="t">${p.propuesta_path ? 'PDF de la propuesta' : 'Documento de propuesta'}</p><p class="s link-host">${p.propuesta_path ? 'Subido a la app' : gdocId(p.propuesta_url) ? 'Google Docs · al cliente le llega en PDF' : esc(hostDe(p.propuesta_url))}</p></div>
           <div class="prop-actions">
             <a class="btn-sm" href="${esc(limpiarUrl(p.propuesta_url))}" target="_blank" rel="noopener noreferrer">Abrir</a>
             ${gdocId(p.propuesta_url) ? `<a class="btn-sm ghost" href="${esc(urlParaCliente(p.propuesta_url))}" target="_blank" rel="noopener noreferrer">Ver PDF</a>` : ''}
             <a class="btn-sm green" href="${esc(waPropuesta(p))}" target="_blank" rel="noopener noreferrer">${I.wa} Enviar</a>
-            <button class="btn-sm ghost" data-act="propuesta" data-id="${p.id}">Cambiar</button>
+          </div>
+          <div class="prop-more">
+            <button class="link-sm" data-act="subir-pdf" data-id="${p.id}">Subir otro PDF</button>
+            <button class="link-sm" data-act="propuesta" data-id="${p.id}">Cambiar link</button>
+            <button class="link-sm danger" data-act="quitar-propuesta" data-id="${p.id}">Quitar</button>
           </div>
         </section>`
-        : `<button class="btn-ghost full" data-act="propuesta" data-id="${p.id}">${I.doc} Agregar link de la propuesta</button>`}
+        : `<section class="card propuesta empty-prop">
+          <div class="prop-actions">
+            <button class="btn-sm" data-act="subir-pdf" data-id="${p.id}">${I.upload} Subir PDF</button>
+            ${C.plantilla ? `<a class="btn-sm ghost" href="${esc(copiaPlantilla())}" target="_blank" rel="noopener noreferrer">${I.doc} Crear desde plantilla</a>`
+              : `<button class="btn-sm ghost" data-act="plantilla">${I.doc} Crear desde plantilla</button>`}
+          </div>
+          <p class="s">${C.plantilla ? 'La plantilla abre una copia en Google Docs. Al terminar, sube el PDF o ' : 'O '}<button class="link-sm inline" data-act="propuesta" data-id="${p.id}">pega el link del documento</button>.</p>
+        </section>`}
       <h2 class="sec">Seguimiento</h2>
       <section class="card follow ${p.fecha_seguimiento && dias(p.fecha_seguimiento) < 0 ? 'late' : ''}">
         ${p.proxima_accion || p.fecha_seguimiento
@@ -620,6 +636,8 @@
         <button class="list-item" data-act="edit-prov" data-id="${p.id}"><span class="avatar sm">${esc(p.nombre.charAt(0).toUpperCase())}</span>
           <div class="grow"><p class="t">${esc(p.nombre)}</p><p class="s">${esc(p.telefono || '')}</p></div>${I.edit}</button>`).join('')}</div>` : empty('Sin proveedores', 'También se crean al registrar un gasto.')}
       <button class="btn-ghost full" data-act="nuevo-prov">${I.plus} Agregar proveedor</button>
+      <h2 class="sec">Propuestas</h2>
+      <button class="card setting" data-act="plantilla"><span class="ico doc">${I.doc}</span><div class="grow"><p class="t">Plantilla de propuesta</p><p class="s">${C.plantilla ? 'Google Docs · lista para copiar en cada cotización' : 'Tu propuesta tipo en Google Docs, para crear las nuevas desde ella'}</p></div>${C.plantilla ? `<span class="badge st-terminado">Lista</span>` : ''}${I.chev}</button>
       <h2 class="sec">Respaldo</h2>
       <button class="card setting" data-act="exportar"><span class="ico">${I.download}</span><div class="grow"><p class="t">Exportar a Excel</p><p class="s">Ventas, gastos, abonos y asistencia (.csv)</p></div></button>
       <h2 class="sec">Cuenta</h2>
@@ -1025,16 +1043,14 @@
         { name: 'fecha_cotizacion', label: 'Fecha de la cotización', type: 'date', value: p.fecha_cotizacion || hoy(), required: true },
         { name: 'proxima_accion', label: 'Próxima acción (opcional)', type: 'text', value: p.proxima_accion || '', placeholder: 'Ej: Llamar para confirmar' },
         { name: 'fecha_seguimiento', label: 'Fecha de seguimiento', type: 'date', value: p.fecha_seguimiento || '' },
-        propuestaField(p.propuesta_url),
         { name: 'descripcion', label: 'Detalle (opcional)', type: 'textarea', value: p.descripcion || '' },
       ],
-      validate: v => { if (!v.cliente_id) return 'Elige o crea el cliente.'; if (v.propuesta_url && !limpiarUrl(v.propuesta_url)) return 'El link de la propuesta no es válido.'; },
+      validate: v => { if (!v.cliente_id) return 'Elige o crea el cliente.'; },
       onSubmit: async v => {
         const row = {
           cliente_id: await resolveCliente(v), nombre: v.nombre, monto_cotizado: v.monto_cotizado || 0,
           probabilidad: v.probabilidad, fecha_cotizacion: v.fecha_cotizacion, proxima_accion: v.proxima_accion || null,
           fecha_seguimiento: v.fecha_seguimiento || null, descripcion: v.descripcion || null,
-          propuesta_url: limpiarUrl(v.propuesta_url),
         };
         if (edit) { row.estado = v.estado; await DB.update('proyectos', p.id, row); }
         else { const n = await DB.insert('proyectos', row); pre._id = n.id; }
@@ -1048,6 +1064,35 @@
       if (!edit && pre._id) location.hash = '#/negocio/' + pre._id; else render();
       toast(edit ? 'Cambios guardados' : 'Cotización guardada', 'ok');
     }
+  }
+
+  // ---------- propuestas: subir PDF y plantilla
+  async function subirPdf(id, f) {
+    const p = C.proy[id]; if (!p) return;
+    const esPdf = f.type === 'application/pdf' || /\.pdf$/i.test(f.name || '');
+    if (!esPdf) { toast('Elige un archivo PDF', 'err'); return; }
+    if (f.size > 20 * 1024 * 1024) { toast('El PDF pesa más de 20 MB. Expórtalo con menos fotos o menor calidad.', 'err'); return; }
+    toast('Subiendo PDF…');
+    try {
+      const { path, url } = await DB.uploadPropuesta(id, f);
+      await DB.update('proyectos', id, { propuesta_url: url, propuesta_path: path });
+      if (p.propuesta_path && p.propuesta_path !== path) await DB.removeArchivo(p.propuesta_path);
+      await refresh(); toast('PDF subido', 'ok');
+    } catch (ex) { console.error(ex); toast(humanError(ex), 'err'); }
+  }
+
+  async function configPlantilla() {
+    const actual = (D.ajustes.find(a => a.clave === 'plantilla_propuesta') || {}).valor || '';
+    const r = await openForm({
+      title: 'Plantilla de propuesta',
+      fields: [{ name: 'url', label: 'Link de tu propuesta tipo en Google Docs', type: 'url', value: actual, autofocus: true,
+        placeholder: 'https://docs.google.com/document/d/…',
+        help: 'Abre tu propuesta tipo en Google Docs y copia el link (Compartir → Copiar enlace). En cada cotización, "Crear desde plantilla" abre una copia lista para escribir.' }],
+      validate: v => { if (!gdocId(v.url)) return 'Debe ser el link de un documento de Google Docs (docs.google.com/document/…).'; },
+      onSubmit: v => DB.setAjuste('plantilla_propuesta', limpiarUrl(v.url)),
+      extra: actual ? [{ label: 'Quitar', cls: 'danger', onClick: async () => { await DB.setAjuste('plantilla_propuesta', ''); await refresh(); toast('Plantilla quitada'); } }] : [],
+    });
+    if (r) { await refresh(); toast('Plantilla guardada. Ya puedes crear propuestas desde ella.', 'ok'); }
   }
 
   async function setEstado(id, estado) {
@@ -1297,13 +1342,37 @@
     propuesta: async ds => {
       const p = C.proy[ds.id]; if (!p) return;
       const r = await openForm({
-        title: 'Propuesta', fields: [{ ...propuestaField(p.propuesta_url), label: 'Link de la propuesta', autofocus: true }],
-        validate: v => { if (v.propuesta_url && !limpiarUrl(v.propuesta_url)) return 'El link no es válido. Cópialo completo desde Drive u OneDrive.'; },
-        onSubmit: v => DB.update('proyectos', p.id, { propuesta_url: limpiarUrl(v.propuesta_url) }),
-        extra: p.propuesta_url ? [{ label: 'Quitar', cls: 'danger', onClick: async () => { await DB.update('proyectos', p.id, { propuesta_url: null }); await refresh(); toast('Propuesta quitada'); } }] : [],
+        title: 'Link de la propuesta', fields: [{ ...propuestaField(p.propuesta_path ? '' : p.propuesta_url), label: 'Link del documento', autofocus: true }],
+        validate: v => {
+          if (!v.propuesta_url) return 'Pega el link del documento.';
+          if (!limpiarUrl(v.propuesta_url)) return 'El link no es válido. Cópialo completo desde Google Docs, Drive u OneDrive.';
+        },
+        onSubmit: async v => {
+          await DB.update('proyectos', p.id, { propuesta_url: limpiarUrl(v.propuesta_url), propuesta_path: null });
+          await DB.removeArchivo(p.propuesta_path);
+        },
       });
       if (r) { await refresh(); toast('Propuesta guardada', 'ok'); }
     },
+    'quitar-propuesta': async ds => {
+      const p = C.proy[ds.id]; if (!p) return;
+      if (!confirm(p.propuesta_path ? '¿Quitar la propuesta? Se borra el PDF subido.' : '¿Quitar el link de la propuesta? (El documento en Google no se borra.)')) return;
+      await DB.update('proyectos', p.id, { propuesta_url: null, propuesta_path: null });
+      await DB.removeArchivo(p.propuesta_path);
+      await refresh(); toast('Propuesta quitada');
+    },
+    'subir-pdf': ds => {
+      // El selector de archivos debe abrirse dentro del toque del usuario (sin await antes).
+      const inp = document.createElement('input');
+      inp.type = 'file'; inp.accept = 'application/pdf,.pdf'; inp.style.display = 'none';
+      document.body.appendChild(inp);
+      inp.addEventListener('change', async () => {
+        const f = inp.files && inp.files[0]; inp.remove();
+        if (f) await subirPdf(ds.id, f);
+      }, { once: true });
+      inp.click();
+    },
+    plantilla: () => configPlantilla(),
     'seg-hecho': async ds => { await DB.update('proyectos', ds.id, { proxima_accion: null, fecha_seguimiento: null }); await refresh(); toast('Listo ✓', 'ok'); },
     'nuevo-cliente': () => formCliente(),
     'edit-cliente': ds => formCliente(C.cli[ds.id]),
