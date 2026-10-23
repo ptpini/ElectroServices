@@ -43,6 +43,28 @@
     { name: 'iva_info', type: 'info', compute: ivaInfo },
   ];
 
+  // ------------------------------------------------------------ propuesta (link al documento)
+  // Solo se aceptan links http(s): nunca javascript: u otros esquemas.
+  const limpiarUrl = s => {
+    let u = String(s || '').trim();
+    if (!u) return null;
+    if (!/^https?:\/\//i.test(u)) u = 'https://' + u;
+    try { const x = new URL(u); return /^https?:$/.test(x.protocol) && x.hostname.includes('.') ? x.href : null; } catch { return null; }
+  };
+  const hostDe = s => { try { return new URL(limpiarUrl(s)).hostname.replace(/^www\./, ''); } catch { return ''; } };
+  // Google Docs: al cliente se le envía el PDF que Google genera desde el documento (export?format=pdf).
+  const gdocId = s => (String(limpiarUrl(s) || '').match(/^https:\/\/docs\.google\.com\/document\/(?:u\/\d+\/)?d\/([\w-]{20,})/) || [])[1] || null;
+  const urlParaCliente = s => { const id = gdocId(s); return id ? `https://docs.google.com/document/d/${id}/export?format=pdf` : limpiarUrl(s); };
+  const waPropuesta = p => {
+    const cli = C.cli[p.cliente_id];
+    const saludo = cli ? `Hola ${cli.nombre.split(' ')[0]}` : 'Hola';
+    const msg = `${saludo}, te envío la propuesta de ${EMPRESA} para "${p.nombre}":\n${urlParaCliente(p.propuesta_url)}\n\nQuedo atento a tus comentarios. ¡Saludos!`;
+    return `https://wa.me/${telLimpio(cli?.telefono)}?text=${encodeURIComponent(msg)}`;
+  };
+  const propuestaField = val => ({ name: 'propuesta_url', label: 'Link de la propuesta (opcional)', type: 'url', value: val || '',
+    placeholder: 'https://docs.google.com/document/d/…',
+    help: 'Pega el link del Google Doc (o de un PDF en Drive/OneDrive). Compártelo como "Cualquier persona con el enlace: Lector". Si es un Google Doc, al cliente le llega como PDF.' });
+
   // ------------------------------------------------------------ catálogos
   const ESTADOS = { cotizado: 'Cotizado', aceptado: 'Aceptado', activo: 'Activo', terminado: 'Terminado', cerrado: 'Cerrado', perdido: 'Perdido' };
   const ESTADO_ORDEN = ['cotizado', 'aceptado', 'activo', 'terminado', 'cerrado', 'perdido'];
@@ -74,6 +96,7 @@
     download: svg('<path d="M12 4v11"/><path d="m7 10 5 5 5-5"/><path d="M5 20h14"/>'),
     cal: svg('<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/>'),
     check: svg('<path d="m5 12 5 5 9-10"/>'),
+    doc: svg('<path d="M14 3H6v18h12V7z"/><path d="M14 3v4h4"/><path d="M9 12h6M9 16h6"/>'),
     left: svg('<path d="m15 6-6 6 6 6"/>'),
     right: svg('<path d="m9 6 6 6-6 6"/>'),
     alert: svg('<path d="M12 3 2 20h20z"/><path d="M12 10v4M12 17v.01"/>'),
@@ -205,7 +228,7 @@
     return `<button class="card deal" data-go="#/negocio/${p.id}">
       <div class="grow">
         <p class="t">${esc(p.nombre)}</p>
-        <p class="s">${esc(nomCli(p.cliente_id))}${p.estado === 'cotizado' ? ` · <span class="prob p-${p.probabilidad}">Prob. ${esc((PROB[p.probabilidad] || '').toLowerCase())}</span>` : ''}</p>
+        <p class="s">${esc(nomCli(p.cliente_id))}${p.propuesta_url ? ' · <span class="has-prop">propuesta</span>' : ''}${p.estado === 'cotizado' ? ` · <span class="prob p-${p.probabilidad}">Prob. ${esc((PROB[p.probabilidad] || '').toLowerCase())}</span>` : ''}</p>
         ${p.proxima_accion ? `<p class="s next ${venc ? 'late' : ''}">→ ${esc(p.proxima_accion)}${p.fecha_seguimiento ? ' · ' + esc(cuando(p.fecha_seguimiento)) : ''}</p>` : ''}
       </div>
       <div class="end"><p class="amt">${clp(p.monto_cotizado)}</p>${badge(p.estado)}</div></button>`;
@@ -324,6 +347,18 @@
       </section>
       <h2 class="sec">Estado</h2>
       <div class="chips wrap">${ESTADO_ORDEN.map(e => `<button class="chip st ${p.estado === e ? 'on st-' + e : ''}" data-act="estado" data-id="${p.id}" data-v="${e}">${ESTADOS[e]}</button>`).join('')}</div>
+      <h2 class="sec">Propuesta</h2>
+      ${limpiarUrl(p.propuesta_url) ? `<section class="card propuesta">
+          <span class="ico doc">${I.doc}</span>
+          <div class="grow"><p class="t">Documento de propuesta</p><p class="s link-host">${gdocId(p.propuesta_url) ? 'Google Docs · al cliente le llega en PDF' : esc(hostDe(p.propuesta_url))}</p></div>
+          <div class="prop-actions">
+            <a class="btn-sm" href="${esc(limpiarUrl(p.propuesta_url))}" target="_blank" rel="noopener noreferrer">Abrir</a>
+            ${gdocId(p.propuesta_url) ? `<a class="btn-sm ghost" href="${esc(urlParaCliente(p.propuesta_url))}" target="_blank" rel="noopener noreferrer">Ver PDF</a>` : ''}
+            <a class="btn-sm green" href="${esc(waPropuesta(p))}" target="_blank" rel="noopener noreferrer">${I.wa} Enviar</a>
+            <button class="btn-sm ghost" data-act="propuesta" data-id="${p.id}">Cambiar</button>
+          </div>
+        </section>`
+        : `<button class="btn-ghost full" data-act="propuesta" data-id="${p.id}">${I.doc} Agregar link de la propuesta</button>`}
       <h2 class="sec">Seguimiento</h2>
       <section class="card follow ${p.fecha_seguimiento && dias(p.fecha_seguimiento) < 0 ? 'late' : ''}">
         ${p.proxima_accion || p.fecha_seguimiento
@@ -990,14 +1025,16 @@
         { name: 'fecha_cotizacion', label: 'Fecha de la cotización', type: 'date', value: p.fecha_cotizacion || hoy(), required: true },
         { name: 'proxima_accion', label: 'Próxima acción (opcional)', type: 'text', value: p.proxima_accion || '', placeholder: 'Ej: Llamar para confirmar' },
         { name: 'fecha_seguimiento', label: 'Fecha de seguimiento', type: 'date', value: p.fecha_seguimiento || '' },
+        propuestaField(p.propuesta_url),
         { name: 'descripcion', label: 'Detalle (opcional)', type: 'textarea', value: p.descripcion || '' },
       ],
-      validate: v => { if (!v.cliente_id) return 'Elige o crea el cliente.'; },
+      validate: v => { if (!v.cliente_id) return 'Elige o crea el cliente.'; if (v.propuesta_url && !limpiarUrl(v.propuesta_url)) return 'El link de la propuesta no es válido.'; },
       onSubmit: async v => {
         const row = {
           cliente_id: await resolveCliente(v), nombre: v.nombre, monto_cotizado: v.monto_cotizado || 0,
           probabilidad: v.probabilidad, fecha_cotizacion: v.fecha_cotizacion, proxima_accion: v.proxima_accion || null,
           fecha_seguimiento: v.fecha_seguimiento || null, descripcion: v.descripcion || null,
+          propuesta_url: limpiarUrl(v.propuesta_url),
         };
         if (edit) { row.estado = v.estado; await DB.update('proyectos', p.id, row); }
         else { const n = await DB.insert('proyectos', row); pre._id = n.id; }
@@ -1215,8 +1252,8 @@
     row(['Fecha', 'Tipo', 'Descripción', 'Cliente / Proveedor', 'Monto', 'Medio', 'Nota']);
     for (const a of [...D.abonos].sort((a, b) => a.fecha.localeCompare(b.fecha))) { const t = C.trx[a.transaccion_id]; if (t) row([a.fecha, t.tipo === 'venta' ? 'Cobro' : 'Pago', t.descripcion, contraparte(t), num(a.monto), a.medio || '', a.nota || '']); }
     row([]); row(['NEGOCIOS']);
-    row(['Fecha cotización', 'Cliente', 'Trabajo', 'Estado', 'Probabilidad', 'Monto cotizado', 'Próxima acción', 'Fecha seguimiento']);
-    for (const p of D.proyectos) row([p.fecha_cotizacion, nomCli(p.cliente_id), p.nombre, ESTADOS[p.estado], PROB[p.probabilidad], num(p.monto_cotizado), p.proxima_accion || '', p.fecha_seguimiento || '']);
+    row(['Fecha cotización', 'Cliente', 'Trabajo', 'Estado', 'Probabilidad', 'Monto cotizado', 'Próxima acción', 'Fecha seguimiento', 'Propuesta']);
+    for (const p of D.proyectos) row([p.fecha_cotizacion, nomCli(p.cliente_id), p.nombre, ESTADOS[p.estado], PROB[p.probabilidad], num(p.monto_cotizado), p.proxima_accion || '', p.fecha_seguimiento || '', p.propuesta_url || '']);
     row([]); row(['ASISTENCIA']);
     row(['Fecha', 'Trabajador', 'Cotización / trabajo', 'Jornada', 'Valor día', 'Extra', 'Total', 'Nota']);
     for (const a of [...D.asistencias].sort((a, b) => a.fecha.localeCompare(b.fecha)))
@@ -1257,6 +1294,16 @@
     'edit-negocio': ds => formNegocio(C.proy[ds.id]),
     estado: ds => setEstado(ds.id, ds.v),
     seguimiento: ds => seguimiento(ds.id),
+    propuesta: async ds => {
+      const p = C.proy[ds.id]; if (!p) return;
+      const r = await openForm({
+        title: 'Propuesta', fields: [{ ...propuestaField(p.propuesta_url), label: 'Link de la propuesta', autofocus: true }],
+        validate: v => { if (v.propuesta_url && !limpiarUrl(v.propuesta_url)) return 'El link no es válido. Cópialo completo desde Drive u OneDrive.'; },
+        onSubmit: v => DB.update('proyectos', p.id, { propuesta_url: limpiarUrl(v.propuesta_url) }),
+        extra: p.propuesta_url ? [{ label: 'Quitar', cls: 'danger', onClick: async () => { await DB.update('proyectos', p.id, { propuesta_url: null }); await refresh(); toast('Propuesta quitada'); } }] : [],
+      });
+      if (r) { await refresh(); toast('Propuesta guardada', 'ok'); }
+    },
     'seg-hecho': async ds => { await DB.update('proyectos', ds.id, { proxima_accion: null, fecha_seguimiento: null }); await refresh(); toast('Listo ✓', 'ok'); },
     'nuevo-cliente': () => formCliente(),
     'edit-cliente': ds => formCliente(C.cli[ds.id]),

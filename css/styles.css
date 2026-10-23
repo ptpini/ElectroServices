@@ -107,6 +107,13 @@ svg { width: 22px; height: 22px; flex: none; }
 .list-item:last-child { border-bottom: 0; }
 .list-item.tap { cursor: pointer; }
 .card.proj { cursor: pointer; align-items: flex-start; }
+.card.propuesta { flex-wrap: wrap; }
+.card.propuesta .prop-actions { display: flex; gap: 8px; flex-wrap: wrap; width: 100%; }
+.card.propuesta .prop-actions .btn-sm { flex: 1; justify-content: center; text-align: center; }
+.ico.doc { background: var(--blue-bg); color: var(--blue); }
+.btn-sm.green { background: var(--green); }
+.link-host { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.has-prop { color: var(--blue); font-weight: 600; }
 .pk-list { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
 .pk-item { display: flex; align-items: center; gap: 12px; width: 100%; padding: 11px 14px; border: 1.5px solid var(--line); border-radius: 13px; background: #fff; }
 .pk-item.on { border-color: var(--green); background: var(--green-bg); }

@@ -44,6 +44,9 @@ create table if not exists public.proyectos (
   created_at         timestamptz not null default now()
 );
 
+-- v1.4: link al documento de propuesta de cada cotización
+alter table public.proyectos add column if not exists propuesta_url text;
+
 -- ---------- TRABAJADORES ----------
 create table if not exists public.trabajadores (
   id          uuid primary key default gen_random_uuid(),
