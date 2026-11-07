@@ -168,3 +168,63 @@ create policy "propuestas_ver_propias" on storage.objects for select to authenti
   using (bucket_id = 'propuestas' and (storage.foldername(name))[1] = auth.uid()::text);
 create policy "propuestas_borrar_propias" on storage.objects for delete to authenticated
   using (bucket_id = 'propuestas' and (storage.foldername(name))[1] = auth.uid()::text);
+
+-- ---------- MIS FINANZAS (personal del dueño, separado de la empresa) v1.6 ----------
+-- Cuentas: 'recurrente' (todos los meses), 'prestamo' (N cuotas mensuales), 'unico' (un solo mes).
+create table if not exists public.personal_cuentas (
+  id              uuid primary key default gen_random_uuid(),
+  user_id         uuid not null default auth.uid() references auth.users(id) on delete cascade,
+  nombre          text not null,
+  categoria       text,
+  tipo            text not null default 'recurrente' check (tipo in ('recurrente','prestamo','unico')),
+  dia_vencimiento int  not null default 1 check (dia_vencimiento between 1 and 31),
+  monto_base      numeric(14,0) not null default 0,
+  cuotas_total    int,
+  mes_inicio      date not null default date_trunc('month', current_date)::date,
+  mes_fin         date,
+  nota            text,
+  created_at      timestamptz not null default now()
+);
+
+-- Estado de cada cuenta en cada mes (se crea al pagar o al cambiar el monto de ese mes).
+create table if not exists public.personal_pagos (
+  id          uuid primary key default gen_random_uuid(),
+  user_id     uuid not null default auth.uid() references auth.users(id) on delete cascade,
+  cuenta_id   uuid not null references public.personal_cuentas(id) on delete cascade,
+  mes         date not null,
+  monto       numeric(14,0) not null default 0,
+  pagado      boolean not null default false,
+  fecha_pago  date,
+  nota        text,
+  created_at  timestamptz not null default now(),
+  unique (cuenta_id, mes)
+);
+
+-- Ingresos personales. desde_empresa = retiro de ElectroServices (resta de la caja de la empresa,
+-- pero no es venta ni gasto).
+create table if not exists public.personal_ingresos (
+  id             uuid primary key default gen_random_uuid(),
+  user_id        uuid not null default auth.uid() references auth.users(id) on delete cascade,
+  monto          numeric(14,0) not null check (monto > 0),
+  fecha          date not null default current_date,
+  desde_empresa  boolean not null default true,
+  nota           text,
+  created_at     timestamptz not null default now()
+);
+
+create index if not exists idx_ppagos_cuenta on public.personal_pagos(cuenta_id);
+
+do $$
+declare t text;
+begin
+  foreach t in array array['personal_cuentas','personal_pagos','personal_ingresos']
+  loop
+    execute format('alter table public.%I enable row level security', t);
+    execute format('drop policy if exists "solo_dueno" on public.%I', t);
+    execute format(
+      'create policy "solo_dueno" on public.%I for all to authenticated
+         using (user_id = auth.uid()) with check (user_id = auth.uid())', t);
+    execute format('revoke all on public.%I from anon', t);
+    execute format('grant select, insert, update, delete on public.%I to authenticated', t);
+  end loop;
+end $$;

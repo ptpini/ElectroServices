@@ -104,7 +104,19 @@
     left: svg('<path d="m15 6-6 6 6 6"/>'),
     right: svg('<path d="m9 6 6 6-6 6"/>'),
     alert: svg('<path d="M12 3 2 20h20z"/><path d="M12 10v4M12 17v.01"/>'),
+    chevDown: svg('<path d="m6 9 6 6 6-6"/>'),
+    wallet: svg('<path d="M4 7h14a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a1 1 0 0 1-1-1z"/><path d="M4 7l11-3v3"/><circle cx="16" cy="13.5" r="1.3"/>'),
+    list: svg('<path d="M9 6h11M9 12h11M9 18h11"/><path d="M4 6h.01M4 12h.01M4 18h.01"/>'),
+    retiro: svg('<path d="M12 4v12"/><path d="m7 11 5 5 5-5"/><rect x="3" y="18" width="18" height="3" rx="1"/>'),
+    briefcase: svg('<rect x="3" y="7" width="18" height="13" rx="2"/><path d="M8 7V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>'),
   };
+  // Logo ElectroServices (propuesta A): escudo hexagonal con una E cuyo trazo central es un rayo.
+  const LOGO = (inv = false) => `<svg viewBox="0 0 120 120" role="img" aria-label="ElectroServices">
+    <polygon points="60,6 107,33 107,87 60,114 13,87 13,33" fill="${inv ? '#FFFFFF' : '#0F2A44'}"/>
+    <rect x="36" y="32" width="13" height="56" rx="2" fill="${inv ? '#0F2A44' : '#FFFFFF'}"/>
+    <rect x="36" y="32" width="46" height="12" rx="2" fill="${inv ? '#0F2A44' : '#FFFFFF'}"/>
+    <rect x="36" y="76" width="46" height="12" rx="2" fill="${inv ? '#0F2A44' : '#FFFFFF'}"/>
+    <polygon points="50,55 80,47 69,58 88,56 57,73 65,62 50,64" fill="#FFB81C"/></svg>`;
 
   // ------------------------------------------------------------ estado
   let D = null;           // datos crudos
@@ -122,6 +134,9 @@
       plantilla: gdocId((D.ajustes.find(a => a.clave === 'plantilla_propuesta') || {}).valor),
     };
     for (const a of D.abonos) C.pagado[a.transaccion_id] = (C.pagado[a.transaccion_id] || 0) + num(a.monto);
+    C.pcta = by(D.personal_cuentas || []);
+    C.ppago = {};
+    for (const p of D.personal_pagos || []) C.ppago[p.cuenta_id + '|' + String(p.mes).slice(0, 7)] = p;
   }
   async function reload() { D = await DB.loadAll(); indexar(); }
   async function refresh() { await reload(); render(); }
@@ -137,6 +152,7 @@
     let c = C.saldoIni;
     for (const a of D.abonos) { const t = C.trx[a.transaccion_id]; if (t) c += t.tipo === 'venta' ? num(a.monto) : -num(a.monto); }
     for (const p of D.pagos_trabajador) c -= num(p.monto);
+    for (const r of D.personal_ingresos || []) if (r.desde_empresa) c -= num(r.monto);
     return c;
   }
 
@@ -183,6 +199,10 @@
     for (const p of D.pagos_trabajador) {
       out.push({ fecha: p.fecha, created: p.created_at || '', monto: -num(p.monto), titulo: 'Pago a ' + (C.trab[p.trabajador_id]?.nombre || 'trabajador'), sub: p.nota || 'Personal', go: '#/trabajador/' + p.trabajador_id });
     }
+    for (const r of D.personal_ingresos || []) {
+      if (!r.desde_empresa) continue;
+      out.push({ fecha: r.fecha, created: r.created_at || '', monto: -num(r.monto), titulo: 'Retiro del dueño', sub: r.nota || 'A Mis finanzas (no es gasto)', go: '#/mf/ingresos' });
+    }
     return out.sort((a, b) => (b.fecha + b.created).localeCompare(a.fecha + a.created));
   }
 
@@ -192,15 +212,30 @@
     ['deudas', '#/deudas', 'Deudas', I.debt], ['clientes', '#/clientes', 'Clientes', I.people],
     ['personal', '#/personal', 'Personal', I.worker],
   ];
-  const navHtml = active => `<nav class="tabbar">${TABS.map(([k, h, l, ic]) =>
+  const TABS_MF = [
+    ['mf-mes', '#/mf', 'Este mes', I.cal], ['mf-cuentas', '#/mf/cuentas', 'Cuentas', I.list],
+    ['mf-ingresos', '#/mf/ingresos', 'Ingresos', I.wallet],
+  ];
+  const esMF = nav => String(nav || '').startsWith('mf');
+  const navHtml = active => `<nav class="tabbar${esMF(active) ? ' mf' : ''}">${(esMF(active) ? TABS_MF : TABS).map(([k, h, l, ic]) =>
     `<button class="tab ${k === active ? 'on' : ''}" data-go="${h}">${ic}<span>${l}</span></button>`).join('')}</nav>`;
 
+  // En las pantallas principales el título es el selector de espacio: ElectroServices o Mis finanzas.
   function shell({ title, sub, back, right = '', body, nav, bar = '' }) {
+    const mf = esMF(nav);
+    const left = back ? `<button class="icon-btn" data-act="back" data-fallback="${back}" aria-label="Volver">${I.back}</button>`
+      : mf ? `<div class="brand-mark mf">${I.wallet}</div>` : `<div class="brand-mark">${LOGO()}</div>`;
+    const center = nav
+      ? `<button class="space-btn" data-act="espacio" aria-label="Cambiar entre ElectroServices y Mis finanzas">
+          <span class="space-name">${mf ? 'Mis finanzas' : esc(EMPRESA)}${I.chevDown}</span>
+          <span class="space-sub">${esc(title === EMPRESA ? 'Inicio' : title)}</span></button>`
+      : `<div class="top-title"><h1>${esc(title)}</h1>${sub ? `<p>${esc(sub)}</p>` : ''}</div>`;
+    const gear = nav && !right ? `<button class="icon-btn" data-go="#/ajustes" aria-label="Ajustes">${I.gear}</button>` : right;
     return `
-      <header class="top">
-        ${back ? `<button class="icon-btn" data-act="back" data-fallback="${back}" aria-label="Volver">${I.back}</button>` : `<div class="brand-mark">${I.bolt}</div>`}
-        <div class="top-title"><h1>${esc(title)}</h1>${sub ? `<p>${esc(sub)}</p>` : ''}</div>
-        ${right}
+      <header class="top${mf ? ' mf' : ''}">
+        ${left}
+        ${center}
+        ${gear}
       </header>
       ${DB.demo ? '<div class="demo-banner">MODO DEMO · datos de prueba, solo en este equipo</div>' : ''}
       <main class="content${nav ? ' has-nav' : ''}${bar ? ' has-bar' : ''}">${body}</main>
@@ -242,7 +277,7 @@
   // ------------------------------------------------------------ vistas
   function vLogin(err = '') {
     return `<div class="login">
-      <div class="login-brand"><div class="brand-mark big">${I.bolt}</div><h1>${esc(EMPRESA)}</h1><p>Finanzas y trabajos</p></div>
+      <div class="login-brand"><div class="brand-mark big">${LOGO(true)}</div><h1>${esc(EMPRESA)}</h1><p>Finanzas y trabajos</p></div>
       <form id="login" class="login-card" autocomplete="on">
         <label>Correo<input name="email" type="email" inputmode="email" autocomplete="username" required></label>
         <label>Contraseña<input name="password" type="password" autocomplete="current-password" required></label>
@@ -252,7 +287,7 @@
   }
 
   function vConfig() {
-    return `<div class="login"><div class="login-brand"><div class="brand-mark big">${I.bolt}</div><h1>Falta configurar</h1>
+    return `<div class="login"><div class="login-brand"><div class="brand-mark big">${LOGO(true)}</div><h1>Falta configurar</h1>
       <p>Edita <b>js/config.js</b> y pon la Project URL de Supabase.</p>
       <p><a class="btn-primary inline" href="?demo=1">Ver modo demo</a></p></div></div>`;
   }
@@ -278,6 +313,7 @@
     const ing = sum(mm.filter(m => m.monto > 0), m => m.monto), egr = -sum(mm.filter(m => m.monto < 0), m => m.monto);
     const ventasIvaMes = D.transacciones.filter(t => t.tipo === 'venta' && t.con_iva && t.fecha.startsWith(mes));
     const ivaMes = sum(ventasIvaMes, t => t.iva);
+    const mfR = resumenMF(mesHoy());
 
     const agenda = [];
     for (const p of D.proyectos) {
@@ -304,6 +340,8 @@
         <button class="tile" data-go="#/negocios/cotizado"><small>Cotizaciones pendientes</small><b>${cotiz.length}</b><span>${clp(sum(cotiz, p => p.monto_cotizado))}</span></button>
       </div>
       ${ivaMes > 0 ? `<section class="iva-card"><div class="grow"><small>IVA de ventas de ${esc(MESES_L[new Date().getMonth()])}</small><b>${clp(ivaMes)}</b></div><span>${ventasIvaMes.length} ${ventasIvaMes.length === 1 ? 'venta' : 'ventas'} con IVA · por pagar al SII</span></section>` : ''}
+      ${mfR.total ? `<button class="card mf-link" data-go="#/mf"><span class="ico mf">${I.wallet}</span>
+          <div class="grow"><small>Mis finanzas · ${esc(MESES_L[new Date().getMonth()])}</small><p class="t">${mfR.falta > 0 ? `Faltan ${clp(mfR.falta)} de ${clp(mfR.total)}` : `Todo pagado (${clp(mfR.total)})`}</p></div>${I.chev}</button>` : ''}
       <h2 class="sec">Próximas actividades</h2>
       ${agenda.length ? `<div class="list">${agenda.slice(0, 8).map(a => `
         <button class="list-item" data-go="${a.go}">
@@ -651,11 +689,333 @@
     return shell({ title: 'No encontrado', back, body: empty('Este registro ya no existe', 'Puede que se haya borrado.') });
   }
 
+  // =================================================================== MIS FINANZAS (personal)
+  // Separado de ElectroServices: cuentas por pagar personales con recurrencia mensual.
+  // Cada cuenta aparece desde el día 1 de su mes; al pagarla queda pagada solo ese mes.
+  const mesHoy = () => hoy().slice(0, 7);
+  const mesDe = s => String(s || '').slice(0, 7);
+  const mesSum = (k, n) => { const [y, m] = k.split('-').map(Number); const t = y * 12 + (m - 1) + n; return `${Math.floor(t / 12)}-${pad(t % 12 + 1)}`; };
+  const mesDiff = (a, b) => { const [ay, am] = a.split('-').map(Number), [by, bm] = b.split('-').map(Number); return (by * 12 + bm) - (ay * 12 + am); };
+  const diasDelMes = k => { const [y, m] = k.split('-').map(Number); return new Date(y, m, 0).getDate(); };
+  const mesNombre = k => { const [y, m] = k.split('-').map(Number); return `${MESES_L[m - 1]} ${y}`; };
+  const mesCorto = k => { const [y, m] = k.split('-').map(Number); return `${MESES[m - 1]} ${y}`; };
+  const fCorta = s => { const [, m, d] = String(s).slice(0, 10).split('-'); return `${+d} ${MESES[+m - 1]}`; };
+  const pronto = f => { const d = dias(f); return d === 0 ? ' · hoy' : d === 1 ? ' · mañana' : d > 1 && d <= 7 ? ` · en ${d} días` : ''; };
+  const validMes = k => /^\d{4}-(0[1-9]|1[0-2])$/.test(k || '');
+  const TIPOS_CTA = { recurrente: 'Mensual', prestamo: 'Préstamo', unico: 'Pago único' };
+  const CATS_P = ['Servicios básicos', 'Bancos y tarjetas', 'Préstamos', 'Vivienda', 'Educación', 'Salud', 'Transporte', 'Otros'];
+
+  // Las cuentas que corresponden a un mes, con su monto y estado en ese mes.
+  function cuentasDelMes(k) {
+    const out = [];
+    for (const c of D.personal_cuentas || []) {
+      const ini = mesDe(c.mes_inicio), fin = c.mes_fin ? mesDe(c.mes_fin) : null;
+      if (k < ini || (fin && k > fin)) continue;
+      if (c.tipo === 'unico' && k !== ini) continue;
+      let cuota = null;
+      if (c.tipo === 'prestamo') { cuota = mesDiff(ini, k) + 1; if (cuota > num(c.cuotas_total)) continue; }
+      const fecha = `${k}-${pad(Math.min(num(c.dia_vencimiento) || 1, diasDelMes(k)))}`;
+      const p = C.ppago[c.id + '|' + k];
+      const pag = !!(p && p.pagado);
+      out.push({ c, k, cuota, fecha, pago: p, pagado: pag, monto: p ? num(p.monto) : num(c.monto_base), vencida: !pag && fecha < hoy() });
+    }
+    return out.sort((a, b) => a.fecha.localeCompare(b.fecha) || byText('nombre')(a.c, b.c));
+  }
+  const ingresosDelMes = k => (D.personal_ingresos || []).filter(i => mesDe(i.fecha) === k);
+  function resumenMF(k) {
+    const items = cuentasDelMes(k);
+    const total = sum(items, i => i.monto), pagadoM = sum(items.filter(i => i.pagado), i => i.monto);
+    const ing = ingresosDelMes(k);
+    return { items, total, pagado: pagadoM, falta: total - pagadoM, retirado: sum(ing.filter(i => i.desde_empresa), i => i.monto), ingresos: sum(ing, i => i.monto) };
+  }
+  const instancia = (c, k) => cuentasDelMes(k).find(i => i.c.id === c.id) || null;
+
+  function mfRow(i) {
+    const c = i.c, n = esc(c.nombre);
+    const cuota = i.cuota ? ` <span class="muted">· cuota ${i.cuota} de ${num(c.cuotas_total)}</span>` : '';
+    const sub = i.pagado ? `<span class="ok">Pagada${i.pago?.fecha_pago ? ' el ' + fCorta(i.pago.fecha_pago) : ''}</span>`
+      : i.vencida ? `<span class="neg">Venció el ${fCorta(i.fecha)} · ${esc(cuando(i.fecha).toLowerCase())}</span>`
+        : `Vence el ${fCorta(i.fecha)}${pronto(i.fecha)}`;
+    return `<div class="list-item mf-item ${i.pagado ? 'paid' : ''}">
+      <button class="chk ${i.pagado ? 'on' : ''}" data-act="mf-toggle" data-id="${c.id}" data-k="${i.k}" aria-label="${i.pagado ? 'Desmarcar pago de' : 'Marcar como pagada'} ${n}">${I.check}</button>
+      <button class="grow mf-main" data-act="mf-item" data-id="${c.id}" data-k="${i.k}">
+        <p class="t">${n}${cuota}</p><p class="s">${sub}</p></button>
+      <p class="amt">${clp(i.monto)}</p></div>`;
+  }
+
+  function vMfMes(kParam) {
+    const k = validMes(kParam) ? kParam : mesHoy();
+    const actual = k === mesHoy(), futuro = k > mesHoy();
+    const r = resumenMF(k);
+    const pend = r.items.filter(i => !i.pagado), pag = r.items.filter(i => i.pagado);
+    const pct = r.total ? Math.round(r.pagado / r.total * 100) : 0;
+    const prox = actual ? pend[0] : null;
+    const porRetirar = Math.max(0, r.total - r.retirado);
+    const body = `
+      <div class="month-nav"><button class="icon-btn" data-go="#/mf/mes/${mesSum(k, -1)}" aria-label="Mes anterior">${I.left}</button>
+        <b>${esc(mesNombre(k))}${actual ? ' <span class="badge st-aceptado">Este mes</span>' : ''}</b>
+        <button class="icon-btn" data-go="#/mf/mes/${mesSum(k, 1)}" aria-label="Mes siguiente">${I.right}</button></div>
+      <section class="hero mf-hero">
+        <p class="label">${futuro ? 'Compromisos de' : 'Total a pagar en'} ${esc(MESES_L[+k.slice(5) - 1])}</p>
+        <p class="hero-amt">${clp(r.total)}</p>
+        <div class="progress dark"><span style="width:${pct}%"></span></div>
+        <div class="hero-row"><div><small>Pagado</small><b class="pos">${clp(r.pagado)}</b></div><div><small>Falta</small><b class="${r.falta > 0 ? 'warn' : 'pos'}">${clp(r.falta)}</b></div></div>
+        ${futuro ? '' : `<div class="hero-row sub"><div><small>Retirado de ElectroServices</small><b>${clp(r.retirado)}</b></div><div><small>Falta retirar</small><b>${clp(porRetirar)}</b></div></div>`}
+      </section>
+      ${prox ? `<button class="card next-due ${prox.vencida ? 'late' : ''}" data-act="mf-item" data-id="${prox.c.id}" data-k="${k}">
+          <span class="ico when ${prox.vencida ? 'late' : 'today'}">${I.cal}</span>
+          <div class="grow"><small>${prox.vencida ? 'Vencida' : 'Próximo vencimiento'}</small><p class="t">${esc(prox.c.nombre)} · ${fCorta(prox.fecha)}</p></div>
+          <p class="amt">${clp(prox.monto)}</p></button>` : ''}
+      ${futuro ? `<p class="note">Así se ve ${esc(mesNombre(k))}. Si una cuenta varía, tócala para ajustar su monto de ese mes.</p>` : ''}
+      ${r.items.length ? `
+        <h2 class="sec">Por pagar <span class="muted">(${pend.length})</span></h2>
+        ${pend.length ? `<div class="list">${pend.map(mfRow).join('')}</div>` : `<div class="empty"><p>Todo pagado este mes</p></div>`}
+        ${pag.length ? `<h2 class="sec">Pagadas <span class="muted">(${pag.length})</span></h2><div class="list">${pag.map(mfRow).join('')}</div>` : ''}`
+        : `<div class="empty"><p>No hay cuentas para ${esc(mesNombre(k))}</p><small>Agrega tus cuentas mensuales (agua, luz, internet…), préstamos o pagos únicos.</small>
+            <button class="btn-ghost inline" data-act="mf-nueva">${I.plus} Agregar cuenta</button></div>`}`;
+    return shell({ title: 'Cuentas del mes', body, nav: 'mf-mes',
+      bar: `<button class="btn-big dark" data-act="mf-nueva" data-k="${k}">${I.plus}<span>Cuenta</span></button>
+            <button class="btn-big amber" data-act="mf-retiro">${I.retiro}<span>Retiro</span></button>` });
+  }
+
+  function estadoCuenta(c) {
+    const ini = mesDe(c.mes_inicio), k = mesHoy();
+    if (c.mes_fin && mesDe(c.mes_fin) < k) return 'terminada';
+    if (c.tipo === 'prestamo' && mesDiff(ini, k) + 1 > num(c.cuotas_total)) return 'terminada';
+    if (c.tipo === 'unico') { const i = instancia(c, ini); if (ini < k && i && i.pagado) return 'terminada'; }
+    return 'activa';
+  }
+
+  function vMfCuentas() {
+    const todas = [...(D.personal_cuentas || [])].sort(byText('nombre'));
+    const act = todas.filter(c => estadoCuenta(c) === 'activa'), term = todas.filter(c => estadoCuenta(c) !== 'activa');
+    const fijo = sum(act.filter(c => c.tipo !== 'unico'), c => c.monto_base);
+    const card = c => {
+      const k = mesHoy(), ini = mesDe(c.mes_inicio);
+      const sub = c.tipo === 'prestamo' ? `Cuota ${Math.min(Math.max(mesDiff(ini, k) + 1, 1), num(c.cuotas_total))} de ${num(c.cuotas_total)} · día ${num(c.dia_vencimiento)}`
+        : c.tipo === 'unico' ? `Vence el ${fCorta(`${ini}-${pad(num(c.dia_vencimiento))}`)} ${ini.slice(0, 4)}`
+          : `Día ${num(c.dia_vencimiento)} de cada mes${c.categoria ? ' · ' + esc(c.categoria) : ''}`;
+      return `<button class="card person" data-go="#/mf/cuenta/${c.id}">
+        <span class="avatar ${c.tipo}">${c.tipo === 'prestamo' ? I.cash : c.tipo === 'unico' ? I.cal : I.list}</span>
+        <div class="grow"><p class="t">${esc(c.nombre)}</p><p class="s">${sub}</p></div>
+        <div class="end"><p class="amt">${clp(c.monto_base)}</p><small class="muted">${TIPOS_CTA[c.tipo]}</small></div>${I.chev}</button>`;
+    };
+    const grupo = (t, arr) => arr.length ? `<h2 class="sec">${t}</h2><div class="cards">${arr.map(card).join('')}</div>` : '';
+    const body = `
+      <div class="summary"><b>${clp(fijo)}</b><span>en cuentas mensuales y cuotas</span></div>
+      ${todas.length ? `${grupo('Mensuales', act.filter(c => c.tipo === 'recurrente'))}${grupo('Préstamos', act.filter(c => c.tipo === 'prestamo'))}${grupo('Pagos únicos', act.filter(c => c.tipo === 'unico'))}${grupo('Terminadas', term)}`
+        : empty('Aún no tienes cuentas', 'Agrega tus cuentas mensuales, préstamos o pagos únicos.')}`;
+    return shell({ title: 'Mis cuentas', body, nav: 'mf-cuentas', bar: `<button class="btn-big dark" data-act="mf-nueva">${I.plus}<span>Nueva cuenta</span></button>` });
+  }
+
+  function vMfCuenta(id) {
+    const c = C.pcta[id]; if (!c) return vNoExiste('#/mf/cuentas');
+    const ini = mesDe(c.mes_inicio), k = mesHoy();
+    let hasta = c.tipo === 'unico' ? ini : c.tipo === 'prestamo' ? mesSum(ini, num(c.cuotas_total) - 1) : k;
+    if (c.mes_fin && mesDe(c.mes_fin) < hasta) hasta = mesDe(c.mes_fin);
+    const meses = [];
+    for (let m = hasta; m >= ini && meses.filter(x => x.k < k).length < 36; m = mesSum(m, -1)) { const i = instancia(c, m); if (i) meses.push(i); }
+    const pagados = meses.filter(i => i.pagado);
+    const totalPag = sum(pagados, i => i.monto);
+    const est = estadoCuenta(c);
+    const proximas = meses.filter(i => i.k >= k).reverse(), pasadas = meses.filter(i => i.k < k);
+    const fila = i => `
+        <button class="list-item" data-act="mf-item" data-id="${c.id}" data-k="${i.k}">
+          <span class="ico ${i.pagado ? 'ok' : i.vencida ? 'gasto' : 'when'}">${i.pagado ? I.check : I.cal}</span>
+          <div class="grow"><p class="t">${esc(mesNombre(i.k))}${i.cuota ? ` · cuota ${i.cuota}` : ''}</p>
+            <p class="s">${i.pagado ? `<span class="ok">Pagada${i.pago?.fecha_pago ? ' el ' + fCorta(i.pago.fecha_pago) : ''}</span>` : i.vencida ? '<span class="neg">Vencida</span>' : i.k > k ? 'Próxima' : 'Pendiente'}${i.pago?.nota ? ' · ' + esc(i.pago.nota) : ''}</p></div>
+          <p class="amt">${clp(i.monto)}</p></button>`;
+    const restanteP = c.tipo === 'prestamo' ? sum(meses.filter(i => !i.pagado), i => i.monto) : 0;
+    const body = `
+      <section class="card info">
+        <div class="row-between"><span class="badge st-${est === 'activa' ? 'cotizado' : 'cerrado'}">${TIPOS_CTA[c.tipo]}${est === 'activa' ? '' : ' · terminada'}</span><small class="muted">${esc(c.categoria || '')}</small></div>
+        <p class="big-amt">${clp(c.monto_base)}</p>
+        <p class="muted">${c.tipo === 'unico' ? `Vence el ${fCorta(`${ini}-${pad(num(c.dia_vencimiento))}`)} ${ini.slice(0, 4)}` : `Vence el día ${num(c.dia_vencimiento)} de cada mes · desde ${esc(mesCorto(ini))}${c.mes_fin ? ' hasta ' + esc(mesCorto(mesDe(c.mes_fin))) : ''}`}</p>
+        ${c.nota ? `<p class="desc">${esc(c.nota)}</p>` : ''}
+      </section>
+      <div class="stats">
+        ${stat('Pagado en total', clp(totalPag), 'pos')}
+        ${c.tipo === 'prestamo' ? stat('Cuotas pagadas', `${pagados.length} de ${num(c.cuotas_total)}`) : stat('Meses pagados', String(pagados.length))}
+        ${c.tipo === 'prestamo' ? stat('Falta por pagar', clp(restanteP), restanteP > 0 ? 'neg' : '') : ''}
+      </div>
+      ${proximas.length ? `<h2 class="sec">${c.tipo === 'prestamo' ? 'Este mes y próximas cuotas' : 'Este mes'}</h2><div class="list">${proximas.slice(0, 6).map(fila).join('')}</div>
+        ${proximas.length > 6 ? `<p class="note">Y ${proximas.length - 6} cuotas más, hasta ${esc(mesNombre(proximas[proximas.length - 1].k))}.</p>` : ''}` : ''}
+      <h2 class="sec">Historial de pagos</h2>
+      ${pasadas.length ? `<div class="list">${pasadas.map(fila).join('')}</div>` : empty('Sin meses anteriores')}
+      ${est === 'activa' && c.tipo !== 'unico' ? `<button class="btn-ghost full" data-act="mf-terminar" data-id="${c.id}">Ya no pago esta cuenta</button>` : ''}`;
+    return shell({ title: c.nombre, sub: 'Mis finanzas', back: '#/mf/cuentas', right: `<button class="icon-btn" data-act="mf-editar" data-id="${c.id}" aria-label="Editar">${I.edit}</button>`, body });
+  }
+
+  function vMfIngresos(kParam) {
+    const k = validMes(kParam) ? kParam : mesHoy();
+    const lista = ingresosDelMes(k).sort((a, b) => (b.fecha + (b.created_at || '')).localeCompare(a.fecha + (a.created_at || '')));
+    const r = resumenMF(k);
+    const body = `
+      <div class="month-nav"><button class="icon-btn" data-go="#/mf/ingresos/${mesSum(k, -1)}" aria-label="Mes anterior">${I.left}</button>
+        <b>${esc(mesNombre(k))}</b><button class="icon-btn" data-go="#/mf/ingresos/${mesSum(k, 1)}" aria-label="Mes siguiente">${I.right}</button></div>
+      <div class="stats three">${stat('Recibido', clp(r.ingresos), 'pos')}${stat('Cuentas pagadas', clp(r.pagado), 'neg')}${stat('Queda', clp(r.ingresos - r.pagado), r.ingresos - r.pagado < 0 ? 'neg' : 'pos')}</div>
+      <p class="note">Los retiros de ElectroServices se descuentan del dinero disponible de la empresa, pero no cuentan como gasto ni como venta.</p>
+      ${lista.length ? `<div class="list">${lista.map(i => `
+        <button class="list-item" data-act="mf-ingreso" data-id="${i.id}"><span class="ico ${i.desde_empresa ? 'when' : 'venta'}">${i.desde_empresa ? I.retiro : I.cash}</span>
+          <div class="grow"><p class="t">${i.desde_empresa ? 'Retiro de ElectroServices' : 'Otro ingreso'}</p><p class="s">${fdate(i.fecha)}${i.nota ? ' · ' + esc(i.nota) : ''}</p></div>
+          <p class="amt pos">+${clp(i.monto)}</p></button>`).join('')}</div>` : empty('Sin ingresos este mes', 'Registra tus retiros de ElectroServices para saber con cuánto cuentas.')}`;
+    return shell({ title: 'Ingresos', body, nav: 'mf-ingresos',
+      bar: `<button class="btn-big amber" data-act="mf-retiro">${I.retiro}<span>Retiro</span></button><button class="btn-big dark" data-act="mf-otro-ingreso">${I.plus}<span>Otro ingreso</span></button>` });
+  }
+
+  // ---------- acciones de Mis finanzas
+  async function guardarPago(c, k, patch) {
+    const p = C.ppago[c.id + '|' + k];
+    if (p) return DB.update('personal_pagos', p.id, patch);
+    const i = instancia(c, k);
+    return DB.insert('personal_pagos', { cuenta_id: c.id, mes: k + '-01', monto: i ? i.monto : num(c.monto_base), pagado: false, ...patch });
+  }
+
+  async function mfToggle(id, k) {
+    const c = C.pcta[id]; const i = c && instancia(c, k); if (!i) return;
+    if (i.pagado) {
+      if (!confirm(`¿Desmarcar el pago de ${c.nombre} de ${mesNombre(k)}?`)) return;
+      await guardarPago(c, k, { pagado: false, fecha_pago: null });
+      await refresh(); toast(`${c.nombre}: pendiente otra vez`);
+    } else {
+      await guardarPago(c, k, { pagado: true, monto: i.monto, fecha_pago: hoy() });
+      await refresh(); toast(`${c.nombre} pagada · ${clp(i.monto)}`, 'ok');
+    }
+  }
+
+  async function mfItem(id, k) {
+    const c = C.pcta[id]; const i = c && instancia(c, k); if (!i) return;
+    const r = await openForm({
+      title: `${c.nombre} · ${mesNombre(k)}`,
+      submitLabel: i.pagado ? 'Guardar' : 'Marcar como pagada',
+      fields: [
+        { name: 'monto', label: i.cuota ? `Monto de la cuota ${i.cuota}` : 'Monto de este mes', type: 'money', required: true, big: true, value: i.monto,
+          help: c.tipo === 'recurrente' ? 'Si la cuenta varía, cambia el monto solo para este mes. Los demás meses no se modifican.' : '' },
+        { name: 'fecha_pago', label: 'Fecha de pago', type: 'date', value: i.pago?.fecha_pago || hoy(), required: true },
+        { name: 'nota', label: 'Nota (opcional)', type: 'text', value: i.pago?.nota || '', placeholder: 'Ej: pagado con tarjeta' },
+      ],
+      onSubmit: v => guardarPago(c, k, { monto: v.monto, pagado: true, fecha_pago: v.fecha_pago, nota: v.nota || null }),
+      extra: [
+        i.pagado
+          ? { label: 'Desmarcar', cls: 'danger', onClick: async () => { await guardarPago(c, k, { pagado: false, fecha_pago: null }); await refresh(); toast(`${c.nombre}: pendiente otra vez`); } }
+          : { label: 'Solo cambiar monto', onClick: async v => { if (!(v.monto > 0)) return false; await guardarPago(c, k, { monto: v.monto }); await refresh(); toast('Monto del mes actualizado', 'ok'); } },
+      ],
+    });
+    if (r) { await refresh(); toast(i.pagado ? 'Pago actualizado' : `${c.nombre} pagada`, 'ok'); }
+  }
+
+  async function formCuenta(c = null, pre = {}) {
+    const edit = !!c; c = c || {};
+    const k = mesHoy();
+    const iniEdit = edit ? mesDe(c.mes_inicio) : null;
+    let nuevoId = null;
+    const r = await openForm({
+      title: edit ? 'Editar cuenta' : 'Nueva cuenta',
+      fields: [
+        { name: 'nombre', label: 'Nombre', type: 'text', required: true, value: c.nombre || '', placeholder: 'Ej: Agua, Luz, Crédito de consumo', autofocus: !edit },
+        { name: 'tipo', label: 'Tipo', type: 'seg', options: [['recurrente', 'Mensual'], ['prestamo', 'Préstamo'], ['unico', 'Pago único']], value: c.tipo || 'recurrente' },
+        { name: 'monto', label: 'Monto', type: 'money', required: true, big: true, value: c.monto_base,
+          help: 'Mensual: lo que pagas cada mes (si varía, pon un aproximado). Préstamo: el valor de la cuota.' },
+        { name: 'dia', label: 'Día de vencimiento', type: 'select', value: String(c.dia_vencimiento || 10),
+          options: Array.from({ length: 31 }, (_, d) => [String(d + 1), `Día ${d + 1}`]), showIf: v => v.tipo !== 'unico' },
+        { name: 'fecha', label: 'Fecha de vencimiento', type: 'date', required: true, showIf: v => v.tipo === 'unico',
+          value: c.tipo === 'unico' ? `${iniEdit}-${pad(num(c.dia_vencimiento))}` : (pre.k && pre.k !== k ? `${pre.k}-01` : hoy()) },
+        { name: 'cuotas_total', label: 'Total de cuotas', type: 'number', required: true, value: c.cuotas_total || '', showIf: v => v.tipo === 'prestamo' },
+        { name: 'cuota_actual', label: `¿Qué número de cuota pagas en ${MESES_L[+k.slice(5) - 1]}?`, type: 'number', required: true,
+          value: c.tipo === 'prestamo' ? Math.max(1, mesDiff(iniEdit, k) + 1) : 1, showIf: v => v.tipo === 'prestamo',
+          help: 'Así la app calcula cuántas cuotas te quedan.' },
+        { name: 'categoria', label: 'Categoría', type: 'select', options: CATS_P.map(x => [x, x]), value: c.categoria || 'Servicios básicos' },
+        { name: 'nota', label: 'Nota (opcional)', type: 'text', value: c.nota || '' },
+      ],
+      validate: v => {
+        if (v.tipo === 'prestamo') {
+          const tot = Math.round(num(v.cuotas_total)), act = Math.round(num(v.cuota_actual));
+          if (tot < 1 || tot > 600) return 'Revisa el total de cuotas.';
+          if (act < 1 || act > tot) return `La cuota de este mes debe estar entre 1 y ${tot}.`;
+        }
+      },
+      onSubmit: async v => {
+        const row = { nombre: v.nombre, tipo: v.tipo, monto_base: v.monto, categoria: v.categoria, nota: v.nota || null };
+        if (v.tipo === 'unico') { row.mes_inicio = mesDe(v.fecha) + '-01'; row.dia_vencimiento = +v.fecha.slice(8, 10); row.cuotas_total = null; }
+        else {
+          row.dia_vencimiento = +v.dia;
+          if (v.tipo === 'prestamo') { row.cuotas_total = Math.round(num(v.cuotas_total)); row.mes_inicio = mesSum(k, -(Math.round(num(v.cuota_actual)) - 1)) + '-01'; }
+          else { row.cuotas_total = null; row.mes_inicio = edit && c.tipo === 'recurrente' ? c.mes_inicio : (pre.k && pre.k > k ? pre.k : k) + '-01'; }
+        }
+        if (edit) await DB.update('personal_cuentas', c.id, row);
+        else nuevoId = (await DB.insert('personal_cuentas', row)).id;
+      },
+      extra: edit ? [{ label: 'Eliminar', cls: 'danger', onClick: async () => {
+        if (!confirm(`¿Eliminar "${c.nombre}" y todo su historial de pagos? Si solo dejaste de pagarla, usa "Ya no pago esta cuenta" para conservar el historial.`)) return false;
+        await DB.remove('personal_cuentas', c.id); await reload(); location.hash = '#/mf/cuentas'; toast('Cuenta eliminada'); } }] : [],
+    });
+    if (r) { await reload(); if (nuevoId && !pre.k) location.hash = '#/mf'; render(); toast(edit ? 'Cuenta actualizada' : 'Cuenta agregada. Aparecerá cada mes que corresponda.', 'ok'); }
+  }
+
+  async function mfTerminar(id) {
+    const c = C.pcta[id]; if (!c) return;
+    const k = mesHoy(); const i = instancia(c, k);
+    const fin = i && i.pagado ? k : mesSum(k, -1);
+    const desde = mesSum(fin, 1);
+    if (!confirm(`"${c.nombre}" ya no aparecerá desde ${mesNombre(desde)}. El historial de pagos se conserva. ¿Continuar?`)) return;
+    await DB.update('personal_cuentas', id, { mes_fin: fin + '-01' });
+    await refresh(); toast('Cuenta terminada');
+  }
+
+  async function formIngreso(ing = null, pre = {}) {
+    const edit = !!ing; ing = ing || {};
+    const empresa = edit ? ing.desde_empresa : pre.empresa !== false;
+    const k = mesHoy(); const r0 = resumenMF(k);
+    const r = await openForm({
+      title: edit ? 'Editar ingreso' : empresa ? 'Retiro de ElectroServices' : 'Otro ingreso',
+      fields: [
+        { name: 'monto', label: 'Monto', type: 'money', required: true, big: true, value: ing.monto, autofocus: !edit,
+          help: !edit && empresa && r0.total > r0.retirado ? `Este mes te falta retirar ${clp(r0.total - r0.retirado)} para cubrir tus cuentas.` : '' },
+        { name: 'origen', label: 'Origen', type: 'seg', options: [['empresa', 'Retiro de ElectroServices'], ['otro', 'Otro ingreso']], value: empresa ? 'empresa' : 'otro' },
+        { name: 'fecha', label: 'Fecha', type: 'date', value: ing.fecha || hoy(), required: true },
+        { name: 'nota', label: 'Nota (opcional)', type: 'text', value: ing.nota || '' },
+      ],
+      onSubmit: v => {
+        const row = { monto: v.monto, fecha: v.fecha, desde_empresa: v.origen === 'empresa', nota: v.nota || null };
+        return edit ? DB.update('personal_ingresos', ing.id, row) : DB.insert('personal_ingresos', row);
+      },
+      extra: edit ? [{ label: 'Eliminar', cls: 'danger', onClick: async () => {
+        if (!confirm('¿Eliminar este ingreso?')) return false;
+        await DB.remove('personal_ingresos', ing.id); await refresh(); toast('Ingreso eliminado'); } }] : [],
+    });
+    if (r) { await refresh(); toast(r.origen === 'empresa' ? 'Retiro registrado' : 'Ingreso registrado', 'ok'); }
+  }
+
+  // Selector de espacio (como el selector de negocio de Treinta)
+  function openChooser(title, opts) {
+    const ov = document.createElement('div');
+    ov.className = 'sheet-wrap';
+    ov.innerHTML = `<div class="sheet-bg"></div><div class="sheet"><div class="sheet-head"><h2>${esc(title)}</h2><button type="button" class="icon-btn" data-close aria-label="Cerrar">${I.x}</button></div>
+      <div class="sheet-body chooser">${opts.map((o, i) => `<button type="button" class="choice ${o.on ? 'on' : ''}" data-i="${i}"><span class="choice-ico">${o.icon}</span>
+        <span class="grow"><b>${esc(o.title)}</b><small>${esc(o.sub)}</small></span>${o.on ? I.check : ''}</button>`).join('')}</div></div>`;
+    document.body.appendChild(ov);
+    document.body.classList.add('sheet-open');
+    requestAnimationFrame(() => ov.classList.add('open'));
+    const close = () => { ov.classList.remove('open'); document.body.classList.remove('sheet-open'); setTimeout(() => ov.remove(), 220); };
+    ov.addEventListener('click', e => {
+      if (e.target.closest('[data-close]') || e.target.classList.contains('sheet-bg')) return close();
+      const b = e.target.closest('[data-i]'); if (b) { close(); opts[+b.dataset.i].go(); }
+    });
+  }
+  function elegirEspacio() {
+    const mf = (location.hash || '').startsWith('#/mf');
+    const r = resumenMF(mesHoy());
+    openChooser('Cambiar a', [
+      { title: EMPRESA, sub: `Dinero disponible ${clp(caja())}`, icon: LOGO(), on: !mf, go: () => { location.hash = '#/'; } },
+      { title: 'Mis finanzas', sub: r.total ? `Este mes: falta pagar ${clp(r.falta)} de ${clp(r.total)}` : 'Tus cuentas personales del mes', icon: `<span class="mf-ico">${I.wallet}</span>`, on: mf, go: () => { location.hash = '#/mf'; } },
+    ]);
+  }
+
   // ------------------------------------------------------------ render / router
   function render() {
     if (loadError) { app.innerHTML = vError(); return; }
     if (!session) { app.innerHTML = vLogin(); return; }
-    if (!D) { app.innerHTML = '<div class="splash"><div class="brand-mark big">' + I.bolt + '</div><p>Cargando…</p></div>'; return; }
+    if (!D) { app.innerHTML = '<div class="splash"><div class="brand-mark big">' + LOGO(true) + '</div><p>Cargando…</p></div>'; return; }
     const h = location.hash.slice(1) || '/';
     const [a, b, c, d] = h.split('/').filter(Boolean);
     let html;
@@ -671,6 +1031,9 @@
       case 'trabajador': html = vTrabajador(b); break;
       case 'movimientos': html = vMovimientos(b); break;
       case 'ajustes': html = vAjustes(); break;
+      case 'mf':
+        html = b === 'cuentas' ? vMfCuentas() : b === 'cuenta' ? vMfCuenta(c) : b === 'ingresos' ? vMfIngresos(c) : vMfMes(b === 'mes' ? c : null);
+        break;
       default: html = vInicio();
     }
     const same = stack[stack.length - 1] === h;
@@ -712,7 +1075,7 @@
       case 'checks':
         inner = `<div class="checks">${f.options.length ? f.options.map(([v, l, s]) => `<label class="check"><input type="checkbox" value="${esc(v)}" ${(val || []).includes(v) ? 'checked' : ''}><span class="box">${I.check}</span><span class="lbl"><b>${esc(l)}</b>${s ? `<small>${esc(s)}</small>` : ''}</span></label>`).join('') : `<p class="muted">${esc(f.empty || 'No hay opciones')}</p>`}</div>`; break;
       default:
-        inner = `<input id="${id}" type="${f.type || 'text'}" value="${esc(val)}" placeholder="${esc(f.placeholder || '')}" autocomplete="off" ${f.type === 'tel' ? 'inputmode="tel"' : ''} ${f.type === 'email' ? 'inputmode="email"' : ''}>`;
+        inner = `<input id="${id}" type="${f.type || 'text'}" value="${esc(val)}" placeholder="${esc(f.placeholder || '')}" autocomplete="off" ${f.type === 'tel' ? 'inputmode="tel"' : ''} ${f.type === 'number' ? 'inputmode="numeric" min="1"' : ''} ${f.type === 'email' ? 'inputmode="email"' : ''}>`;
     }
     return `<div class="field" data-f="${f.name}"><label for="${id}">${esc(f.label)}</label>${inner}${f.help ? `<small class="help">${esc(f.help)}</small>` : ''}</div>`;
   }
@@ -797,7 +1160,7 @@
       $('.sheet-bg', ov).onclick = () => close(null);
       $('[data-close]', ov).onclick = () => close(null);
       $$('[data-extra]', ov).forEach(b => b.onclick = async () => {
-        try { const r = await extra[+b.dataset.extra].onClick(); if (r !== false) close(null); } catch (ex) { showErr(humanError(ex)); }
+        try { const r = await extra[+b.dataset.extra].onClick(values()); if (r !== false) close(null); } catch (ex) { showErr(humanError(ex)); }
       });
       form.onsubmit = async e => {
         e.preventDefault();
@@ -1306,6 +1669,15 @@
     row([]); row(['PAGOS A TRABAJADORES']);
     row(['Fecha', 'Trabajador', 'Monto', 'Nota']);
     for (const p of [...D.pagos_trabajador].sort((a, b) => a.fecha.localeCompare(b.fecha))) row([p.fecha, C.trab[p.trabajador_id]?.nombre || '', num(p.monto), p.nota || '']);
+    row([]); row(['MIS FINANZAS: CUENTAS']);
+    row(['Cuenta', 'Tipo', 'Categoría', 'Día vencimiento', 'Monto base', 'Cuotas', 'Desde', 'Hasta']);
+    for (const c of D.personal_cuentas || []) row([c.nombre, TIPOS_CTA[c.tipo], c.categoria || '', num(c.dia_vencimiento), num(c.monto_base), c.cuotas_total || '', mesDe(c.mes_inicio), c.mes_fin ? mesDe(c.mes_fin) : '']);
+    row([]); row(['MIS FINANZAS: PAGOS POR MES']);
+    row(['Mes', 'Cuenta', 'Monto', 'Pagado', 'Fecha de pago', 'Nota']);
+    for (const p of [...(D.personal_pagos || [])].sort((a, b) => String(a.mes).localeCompare(String(b.mes)))) row([mesDe(p.mes), C.pcta[p.cuenta_id]?.nombre || '', num(p.monto), p.pagado ? 'Sí' : 'No', p.fecha_pago || '', p.nota || '']);
+    row([]); row(['MIS FINANZAS: INGRESOS']);
+    row(['Fecha', 'Origen', 'Monto', 'Nota']);
+    for (const i of [...(D.personal_ingresos || [])].sort((a, b) => a.fecha.localeCompare(b.fecha))) row([i.fecha, i.desde_empresa ? 'Retiro de ElectroServices' : 'Otro ingreso', num(i.monto), i.nota || '']);
     row([]); row(['CLIENTES']); row(['Nombre', 'Teléfono', 'Correo', 'Dirección']);
     for (const c of D.clientes) row([c.nombre, c.telefono || '', c.email || '', c.direccion || '']);
 
@@ -1373,6 +1745,15 @@
       inp.click();
     },
     plantilla: () => configPlantilla(),
+    espacio: () => elegirEspacio(),
+    'mf-toggle': ds => mfToggle(ds.id, ds.k),
+    'mf-item': ds => mfItem(ds.id, ds.k),
+    'mf-nueva': ds => formCuenta(null, { k: ds.k }),
+    'mf-editar': ds => formCuenta(C.pcta[ds.id]),
+    'mf-terminar': ds => mfTerminar(ds.id),
+    'mf-retiro': () => formIngreso(null, { empresa: true }),
+    'mf-otro-ingreso': () => formIngreso(null, { empresa: false }),
+    'mf-ingreso': ds => formIngreso((D.personal_ingresos || []).find(i => i.id === ds.id)),
     'seg-hecho': async ds => { await DB.update('proyectos', ds.id, { proxima_accion: null, fecha_seguimiento: null }); await refresh(); toast('Listo ✓', 'ok'); },
     'nuevo-cliente': () => formCliente(),
     'edit-cliente': ds => formCliente(C.cli[ds.id]),

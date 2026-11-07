@@ -4,7 +4,8 @@
 window.DB = (() => {
   'use strict';
   const TABLES = ['clientes', 'proveedores', 'proyectos', 'trabajadores', 'transacciones',
-    'abonos', 'asistencias', 'pagos_trabajador', 'ajustes'];
+    'abonos', 'asistencias', 'pagos_trabajador', 'ajustes',
+    'personal_cuentas', 'personal_pagos', 'personal_ingresos'];
   const demo = new URLSearchParams(location.search).has('demo');
   const CFG = window.APP_CONFIG || {};
   let sb = null;
@@ -16,7 +17,7 @@ window.DB = (() => {
     }));
 
   // ------------------------------------------------------------ DEMO
-  const LS = 'electroservices_demo_v3';
+  const LS = 'electroservices_demo_v4';
   const dLoad = () => { try { return JSON.parse(localStorage.getItem(LS)); } catch { return null; } };
   const dSave = d => localStorage.setItem(LS, JSON.stringify(d));
 
@@ -68,6 +69,21 @@ window.DB = (() => {
     }
     add('pagos_trabajador', { trabajador_id: t1.id, monto: 90000, fecha: ymd(-2), nota: 'Adelanto' });
     d.ajustes.push({ clave: 'saldo_inicial', valor: '1500000' });
+
+    // Mis finanzas (personal): el ejemplo que mandó Arturo
+    const hoyD = new Date();
+    const mesK = off => { const x = new Date(hoyD.getFullYear(), hoyD.getMonth() + off, 1); return `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, '0')}-01`; };
+    const agua = add('personal_cuentas', { nombre: 'Agua', categoria: 'Servicios básicos', tipo: 'recurrente', dia_vencimiento: 10, monto_base: 28000, mes_inicio: mesK(-3) });
+    add('personal_cuentas', { nombre: 'Electricidad', categoria: 'Servicios básicos', tipo: 'recurrente', dia_vencimiento: 15, monto_base: 65000, mes_inicio: mesK(-3) });
+    const prest = add('personal_cuentas', { nombre: 'Préstamo bancario', categoria: 'Préstamos', tipo: 'prestamo', dia_vencimiento: 20, monto_base: 180000, cuotas_total: 24, mes_inicio: mesK(-4) });
+    add('personal_cuentas', { nombre: 'Internet', categoria: 'Servicios básicos', tipo: 'recurrente', dia_vencimiento: 25, monto_base: 30000, mes_inicio: mesK(-3) });
+    for (const off of [-3, -2, -1]) {
+      add('personal_pagos', { cuenta_id: agua.id, mes: mesK(off), monto: 26000 + (off + 3) * 1500, pagado: true, fecha_pago: mesK(off).slice(0, 8) + '09' });
+      add('personal_pagos', { cuenta_id: prest.id, mes: mesK(off), monto: 180000, pagado: true, fecha_pago: mesK(off).slice(0, 8) + '19' });
+    }
+    add('personal_pagos', { cuenta_id: prest.id, mes: mesK(-4), monto: 180000, pagado: true, fecha_pago: mesK(-4).slice(0, 8) + '19' });
+    add('personal_pagos', { cuenta_id: agua.id, mes: mesK(0), monto: 28000, pagado: true, fecha_pago: ymd(0) });
+    add('personal_ingresos', { monto: 150000, fecha: ymd(-1), desde_empresa: true, nota: 'Retiro para cuentas' });
     void p2;
     return d;
   }
@@ -121,7 +137,9 @@ window.DB = (() => {
 
   async function loadAll() {
     if (demo) return JSON.parse(JSON.stringify(dData()));
-    const res = await Promise.all(TABLES.map(loadTable));
+    // Las tablas de Mis finanzas son opcionales: si aún no existen, la app sigue funcionando.
+    const opcional = t => t.startsWith('personal_');
+    const res = await Promise.all(TABLES.map(t => opcional(t) ? loadTable(t).catch(() => []) : loadTable(t)));
     return Object.fromEntries(TABLES.map((t, i) => [t, res[i]]));
   }
 
@@ -158,6 +176,7 @@ window.DB = (() => {
       if (t === 'clientes') { nullify('proyectos', 'cliente_id'); nullify('transacciones', 'cliente_id'); }
       if (t === 'proveedores') nullify('transacciones', 'proveedor_id');
       if (t === 'proyectos') { nullify('transacciones', 'proyecto_id'); nullify('asistencias', 'proyecto_id'); }
+      if (t === 'personal_cuentas') drop('personal_pagos', 'cuenta_id');
       dSave(d); return;
     }
     const { error } = await sb.from(t).delete().eq('id', id);
